@@ -79,3 +79,6 @@ ModelManifest.xml
 
 .vs
 .vscode
+
+# Local temp files
+_temp/
