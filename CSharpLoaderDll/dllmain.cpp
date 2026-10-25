@@ -1,7 +1,7 @@
 ﻿// dllmain.cpp : Defines the entry point for the DLL application.
 #include "pch.h"
-#include <iostream>
 #include <mutex>
+#include "log.hpp"
 #include "memory.h"
 #include "hid_dll.hpp"
 #include "version_dll.hpp"
@@ -76,13 +76,13 @@ DWORD WINAPI MainThread(LPVOID dwModule)
         freopen_s(&fDummy, "CONOUT$", "w", stderr);
     }
     loadPluginDlls();
-    std::cout << "CSharpLoader enableJit: " << enableJit << std::endl;
-    std::cout << "CSharpLoader wait for init." << std::endl;
+    log_info("CSharpLoader enableJit: %d", enableJit);
+    log_info("CSharpLoader wait for init.");
     // enable jit
     if (enableJit) {
         uint64_t memory_function_ptr = signature("83 3D ? ? ? ? 00 0F 84 ? ? ? ? C7 84 24 ? ? 00 00 01 00 00 00").GetPointer();
         if (memory_function_ptr == 0) {
-            std::cout << "memory function signature not found." << std::endl;
+            log_error("memory function signature not found.");
         } else {
             DWORD old_protect;
             if (VirtualProtect((void*)(memory_function_ptr + 7), 2, PAGE_EXECUTE_READWRITE, &old_protect)) {
@@ -90,7 +90,7 @@ DWORD WINAPI MainThread(LPVOID dwModule)
                 VirtualProtect((void*)(memory_function_ptr + 7), 2, old_protect, &old_protect);
                 uint64_t mono_mode_ptr = signature("48 8D 0D ? ? ? ? E8 ? ? ? ? 89 44 24 ? 83 7C 24 ? 00").GetPointer();
                 if (mono_mode_ptr == 0) {
-                    std::cout << "mono_mode signature not found." << std::endl;
+                    log_error("mono_mode signature not found.");
                 } else {
                     if (VirtualProtect((void*)(mono_mode_ptr + 7), 5, PAGE_EXECUTE_READWRITE, &old_protect)) {
                         *(uint8_t*)(mono_mode_ptr + 7) = 0xB8;
@@ -104,30 +104,30 @@ DWORD WINAPI MainThread(LPVOID dwModule)
 
     signature domain_s("F0 FF 88 B0 00 00 00 48 8B 05 ? ? ? ? 48 3B D8 49 0F 44 C4");
     if (domain_s.GetPointer() == 0) {
-        std::cout << "domainPtr pattern not found." << std::endl;
+        log_error("domainPtr pattern not found.");
         return EXIT_FAILURE;
     }
     void **domainPtr = (void**)domain_s.instruction(10).add(14).GetPointer();
     if (domainPtr == nullptr) {
-        std::cout << "domainPtr not found." << std::endl;
+        log_error("domainPtr not found.");
         return EXIT_FAILURE;
     }
     auto mono_thread_internal_attach = (mono_thread_internal_attach_t)signature(
         "40 57 48 83 EC 30 8B 15 ? ? ? ? 48 8B F9 65 48 8B 04 25 58 00 00 00 B9 A8 02 00 00 48 8B 04 D0 48 83 3C 01 00").GetPointer();
     if (mono_thread_internal_attach == nullptr) {
-        std::cout << "mono_thread_internal_attach not found." << std::endl;
+        log_error("mono_thread_internal_attach not found.");
         return EXIT_FAILURE;
     }
     auto mono_assembly_request_open = (mono_assembly_request_open_t)signature(
         "40 55 41 56 41 57 48 8D AC 24 40 FF FF FF 48 81 EC C0 01 00 00 48 8B 05 ? ? ? ? 48 33 C4 48 89 85 90 00 00 00 48 89 4D 90").GetPointer();
     if (mono_assembly_request_open == nullptr) {
-        std::cout << "mono_assembly_request_open not found." << std::endl;
+        log_error("mono_assembly_request_open not found.");
         return EXIT_FAILURE;
     }
     auto ves_icall_System_AppDomain_ExecuteAssembly = (ves_icall_System_AppDomain_ExecuteAssembly_t)signature(
         "48 89 5C 24 08 55 56 57 41 56 41 57 48 83 EC 50 48 89 94 24 88 00 00 00").GetPointer();
     if (ves_icall_System_AppDomain_ExecuteAssembly == nullptr) {
-        std::cout << "ves_icall_System_AppDomain_ExecuteAssembly not found." << std::endl;
+        log_error("ves_icall_System_AppDomain_ExecuteAssembly not found.");
         return EXIT_FAILURE;
     }
     void* domain = nullptr;
@@ -139,14 +139,14 @@ DWORD WINAPI MainThread(LPVOID dwModule)
         Sleep(1000); // 1s
     }
     if (domain == nullptr) {
-        std::cout << "domain is null." << std::endl;
+        log_error("domain is null.");
         return EXIT_FAILURE;
     }
     Sleep(2000); // 2s
 
     void* mono_thread = mono_thread_internal_attach(domain);
     if (mono_thread == nullptr) {
-        std::cout << "mono_thread_internal_attach failed." << std::endl;
+        log_error("mono_thread_internal_attach failed.");
         return EXIT_FAILURE;
     }
 
@@ -156,18 +156,18 @@ DWORD WINAPI MainThread(LPVOID dwModule)
     wchar_t fullFilename[MAX_PATH];
     DWORD fullFilenameLen = GetFullPathNameW(L"CSharpLoader\\CSharpManager.bin", MAX_PATH, fullFilename, nullptr);
     if (fullFilenameLen == 0 || fullFilenameLen >= MAX_PATH) {
-        std::cout << "GetFullPathName failed." << std::endl;
+        log_error("GetFullPathName failed.");
         return EXIT_FAILURE;
     }
     // convert to utf-8 to support Chinese path, one utf-16 unit needs at most 3 utf-8 bytes
     char fullFilenameA[MAX_PATH * 3];
     if (WideCharToMultiByte(CP_UTF8, 0, fullFilename, -1, fullFilenameA, static_cast<int>(std::size(fullFilenameA)), NULL, NULL) == 0) {
-        std::cout << "convert path to utf-8 failed." << std::endl;
+        log_error("convert path to utf-8 failed.");
         return EXIT_FAILURE;
     }
     void* assembly = mono_assembly_request_open(fullFilenameA, &open_request, &status);
     if (assembly == nullptr) {
-        std::cout << "mono_assembly_request_open failed." << std::endl;
+        log_error("mono_assembly_request_open failed.");
         return EXIT_FAILURE;
     }
 
@@ -181,10 +181,10 @@ DWORD WINAPI MainThread(LPVOID dwModule)
     void* args = nullptr;
     int res = ves_icall_System_AppDomain_ExecuteAssembly(&p_ad, &p_refass, &args, &mono_error);
     if (res != 0) {
-        std::cout << "ves_icall_System_AppDomain_ExecuteAssembly failed: " << res << std::endl;
+        log_error("ves_icall_System_AppDomain_ExecuteAssembly failed: %d", res);
         return EXIT_FAILURE;
     }
-    std::cout << "CSharpLoader init success." << std::endl;
+    log_info("CSharpLoader init success.");
     return EXIT_SUCCESS;
 }
 

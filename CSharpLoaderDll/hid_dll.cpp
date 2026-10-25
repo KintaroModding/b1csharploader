@@ -1,5 +1,6 @@
 #include "pch.h"
 #include "hid_dll.hpp"
+#include "log.hpp"
 #include <windows.h>
 #include <hidsdi.h>
 #include <string>
@@ -18,7 +19,7 @@ bool init_hid_dll() {
     if ((hModuleDll = LoadLibraryW(fullpathDllName)) == NULL) {
         return false;
     }
-    wprintf(L"load %s success\n", dllFname);
+    log_info(L"load %s success", dllFname);
     return true;
 }
 

@@ -1,6 +1,7 @@
 ﻿// https://github.com/t-mat/pseudo-version-dll/
 #include "pch.h"
 #include "plugin.hpp"
+#include "log.hpp"
 #include <functional>
 #include <algorithm>
 #include <array>
@@ -57,7 +58,7 @@ void recursiveFileEnumerator(const wchar_t* path, const std::function<void(const
 void loadPluginDlls() {
     unloadPluginDlls();
     Path pluginsPath = Path::make(L"CSharpLoader\\Plugins");
-    wprintf(L"loadPluginDlls : pluginsPath=[%s]\n", pluginsPath.data());
+    log_info(L"loadPluginDlls : pluginsPath=[%s]", pluginsPath.data());
 
     std::vector<Path> pluginFilenames;
     recursiveFileEnumerator(pluginsPath, [&](const wchar_t* path) {
@@ -78,10 +79,10 @@ void loadPluginDlls() {
         auto* filename = static_cast<const wchar_t*>(pluginFilename);
         auto hm = LoadLibraryW(filename);
         if(hm == nullptr) {
-            wprintf(L"loadPluginDlls : failed to load %s\n", filename);
+            log_error(L"loadPluginDlls : failed to load %s", filename);
         } else {
             hModules.push_back(hm);
-            wprintf(L"loadPluginDlls : load %s\n", filename);
+            log_info(L"loadPluginDlls : load %s", filename);
         }
     }
 }
@@ -91,7 +92,7 @@ void unloadPluginDlls() {
     for(auto it = hModules.rbegin(); it != hModules.rend(); ++it) {
         const auto h = *it;
         if(h != nullptr) {
-            wprintf(L"unloadPluginDlls : unload %s (hModules=0x%p)\n", getModuleFilenameW(h).data(), h);
+            log_info(L"unloadPluginDlls : unload %s (hModules=0x%p)", getModuleFilenameW(h).data(), h);
             FreeLibrary(h);
         }
     }

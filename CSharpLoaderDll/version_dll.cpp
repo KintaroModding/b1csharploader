@@ -1,6 +1,7 @@
 ﻿#include "pch.h"
 #pragma unmanaged
 #include "version_dll.hpp"
+#include "log.hpp"
 #include <windows.h>
 #include <array>
 #include <stdio.h>
@@ -18,7 +19,7 @@ bool init_version_dll() {
     if ((hModuleDll = LoadLibraryW(fullpathDllName)) == NULL) {
         return false;
     }
-    wprintf(L"load %s success\n", dllFname);
+    log_info(L"load %s success", dllFname);
     return true;
 }
 
