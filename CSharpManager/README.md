@@ -1,6 +1,9 @@
 # CSharpManager
-C# mod的管理器，CSharpLoader会加载CSharpManager，通过CSharpManager加载其他C# mod
 
-## 编译
+The C# mod manager. CSharpLoader starts CSharpManager, and CSharpManager loads the C# mods.
 
+## Build
+
+```
 dotnet build
+```
