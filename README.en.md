@@ -55,6 +55,16 @@ In version 0.0.7 of the C# loader, to enable C# patch/hook features, the game's 
 - GameDll
   - inner C# dll of game
 
+### Update GameDll
+
+GameDll holds the C# dlls of game version 1.0.21.23831. After a game update, extract them again from the game exe (needs Python 3):
+
+```
+python extract_dlls.py --exe "<game folder>/b1/Binaries/Win64/b1-Win64-Shipping.exe"
+```
+
+The script updates the dlls in GameDll and lists files that the game no longer contains. Add `--dry-run` to only list them.
+
 ## Mod develop tutorial
 
 Suggest install [.net 8 sdk](https://dotnet.microsoft.com/) to develop with latest syntax.
@@ -119,3 +129,9 @@ harmony.UnpatchAll();
 
 ### Mod deps
 Mod depends dll can put in `CSharpLoader/Mods/<ModName>/` or `CSharpLoader/Mods/Common/`, Common is shared by all mods.
+
+## Fork changes
+
+Changes taken from pull requests to the original project:
+
+- "Add script to extract embedded .NET assemblies from game exe" by inkydragon

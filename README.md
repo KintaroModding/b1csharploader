@@ -56,6 +56,16 @@ version.dll是常用的插件名字，如果你使用了其他有名称冲突的
 - GameDll
   - 游戏内的C# dll，写mod代码需要引用这些dll
 
+### 更新GameDll
+
+GameDll里是游戏版本1.0.21.23831的C# dll。游戏更新后，可以用脚本从游戏exe中重新提取（需要Python 3）：
+
+```
+python extract_dlls.py --exe "<游戏目录>/b1/Binaries/Win64/b1-Win64-Shipping.exe"
+```
+
+脚本会更新GameDll里的dll，并列出游戏中已经没有的文件。加上`--dry-run`只列出，不复制。
+
 ## mod编写教程
 
 建议安装.net 8 sdk，方便使用最新的语法。
@@ -121,3 +131,9 @@ harmony.UnpatchAll();
 
 ### mod的其他依赖
 mod dll的依赖可以放在`CSharpLoader/Mods/<ModName>/`或者`CSharpLoader/Mods/Common/`中，这样其他Mod也能用里面的依赖
+
+## Fork的更改
+
+从原项目的pull request中采用的更改：
+
+- "Add script to extract embedded .NET assemblies from game exe"，作者 inkydragon
