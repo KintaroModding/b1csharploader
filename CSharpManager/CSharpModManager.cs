@@ -91,9 +91,10 @@ namespace CSharpManager
             Type ICSharpModType = typeof(ICSharpMod);
             foreach (var dir in dirs)
             {
-                LoadingModName = Path.GetFileName(dir);
-                string dllPath = Path.Combine(dir, $"{LoadingModName}.dll");
+                string modName = Path.GetFileName(dir);
+                string dllPath = Path.Combine(dir, $"{modName}.dll");
                 if (!File.Exists(dllPath)) continue;
+                LoadingModName = modName;
                 try
                 {
                     Log.Debug($"======== Loading {dllPath} ========");
@@ -124,12 +125,15 @@ namespace CSharpManager
                             }
                         }
                     }
-                    LoadingModName = null;
                 }
                 catch (Exception e)
                 {
                     Log.Error($"Load {dllPath} failed:");
                     Log.Error(e);
+                }
+                finally
+                {
+                    LoadingModName = null;
                 }
             }
         }
