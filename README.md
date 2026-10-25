@@ -66,6 +66,16 @@ python extract_dlls.py --exe "<游戏目录>/b1/Binaries/Win64/b1-Win64-Shipping
 
 脚本会更新GameDll里的dll，并列出游戏中已经没有的文件。加上`--dry-run`只列出，不复制。
 
+## 编译
+
+在PowerShell中运行`build.ps1`，会编译全部项目，并把发布用的zip打包到`dist/`：
+
+```
+powershell -ExecutionPolicy Bypass -File build.ps1 -Version 1.0.0
+```
+
+需要安装Visual Studio 2022（或其生成工具）的C++工作负载，以及.NET SDK 8或更新版本。
+
 ## mod编写教程
 
 建议安装.net 8 sdk，方便使用最新的语法。
@@ -143,3 +153,7 @@ mod dll的依赖可以放在`CSharpLoader/Mods/<ModName>/`或者`CSharpLoader/Mo
 根据原项目的issue做的修复：
 
 - "一堆BUG"，作者 bfxh
+
+## 许可证
+
+MIT，见[LICENSE](LICENSE)。`GameDll`中的dll来自游戏，归游戏开发商所有，只用于编译mod。

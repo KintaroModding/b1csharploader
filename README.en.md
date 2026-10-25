@@ -65,6 +65,16 @@ python extract_dlls.py --exe "<game folder>/b1/Binaries/Win64/b1-Win64-Shipping.
 
 The script updates the dlls in GameDll and lists files that the game no longer contains. Add `--dry-run` to only list them.
 
+## Build
+
+Run `build.ps1` in PowerShell. It builds all projects and packs the release zip into `dist/`:
+
+```
+powershell -ExecutionPolicy Bypass -File build.ps1 -Version 1.0.0
+```
+
+It needs Visual Studio 2022 (or its Build Tools) with the C++ workload, and the .NET SDK 8 or newer.
+
 ## Mod develop tutorial
 
 Suggest install [.net 8 sdk](https://dotnet.microsoft.com/) to develop with latest syntax.
@@ -141,3 +151,7 @@ Changes taken from pull requests to the original project:
 Fixes based on issues in the original project:
 
 - "一堆BUG" by bfxh
+
+## License
+
+MIT, see [LICENSE](LICENSE). The dlls in `GameDll` come from the game and belong to its developer. They are only here so that mods can be built.

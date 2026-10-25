@@ -1,0 +1,10 @@
+{
+  "$schema": "https://openmods.nexus/openmods.schema.json",
+  "openmods": 1,
+  "name": "C# Loader",
+  "summary": "Loads mods written in C# into Black Myth: Wukong, with hotkeys, gamepad buttons and Harmony hooks.",
+  "games": ["black-myth-wukong"],
+  "tags": ["library", "tools"],
+  "cover": "docs/cover.png",
+  "gameVersions": ["1.0.21.23831"]
+}
