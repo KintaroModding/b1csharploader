@@ -6,7 +6,7 @@ namespace CSharpModBase.Input
     public static class KeyUtils
     {
         /// <summary>
-        /// Keys转字符串，支持组合键
+        /// converts keys to a string, supports key combinations
         /// </summary>
         /// <param name="key"></param>
         /// <returns></returns>

@@ -32,7 +32,7 @@ namespace CSharpManager
                     HWnd = hWnd;
                     return false;
                 }
-                return true; // 继续枚举
+                return true; // continue enumerating
             }), IntPtr.Zero);
         }
 
@@ -154,7 +154,7 @@ namespace CSharpManager
 
         private delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);
 
-        // 导入Win32 API函数
+        // Win32 API imports
         [DllImport("user32.dll", SetLastError = true, CharSet = CharSet.Auto, CallingConvention = CallingConvention.StdCall)]
         private static extern bool EnumWindows(EnumWindowsProc lpEnumFunc, IntPtr lParam);
 
