@@ -21,6 +21,9 @@ namespace CSharpManager
 
         static CSharpModManager()
         {
+            // first, so the in-game console also gets the lines below
+            ConsoleCapture.Install();
+
             AppDomain currentDomain = AppDomain.CurrentDomain;
             currentDomain.AssemblyResolve += AssemblyResolve;
             currentDomain.UnhandledException += OnUnhandledException;
