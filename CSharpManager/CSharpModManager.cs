@@ -55,7 +55,8 @@ namespace CSharpManager
                 Log.Error($"Load assembly {args.Name} failed:");
                 Log.Error(e);
             }
-            return Assembly.Load(args.Name);
+            // Assembly.Load here would raise this event again and recurse
+            return null;
         }
 
         private static void OnUnhandledException(object sender, UnhandledExceptionEventArgs e)
@@ -88,7 +89,7 @@ namespace CSharpManager
                 return;
             }
             string[] dirs = Directory.GetDirectories(Common.ModDir);
-            Type ICSharpModType = typeof(ICSharpMod);
+            Type modInterface = typeof(ICSharpMod);
             foreach (var dir in dirs)
             {
                 string modName = Path.GetFileName(dir);
@@ -113,7 +114,8 @@ namespace CSharpManager
                     }
                     foreach (Type type in assembly.GetTypes())
                     {
-                        if (ICSharpModType.IsAssignableFrom(type))
+                        // abstract base classes cannot be created
+                        if (modInterface.IsAssignableFrom(type) && !type.IsAbstract && !type.IsInterface)
                         {
                             Log.Debug($"Found ICSharpMod: {type}");
 
