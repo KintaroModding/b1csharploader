@@ -28,25 +28,25 @@ namespace CSharpModBase
             return InputManager!.RegisterGamePadBind(button, action);
         }
 
-        public static void TryRun(Action aciton)
+        public static void TryRun(Action action)
         {
             try
             {
-                aciton();
+                action();
             }
             catch (Exception e)
             {
                 Log.Error(e);
-            };
+            }
         }
 
-        public static void TryRunOnGameThread(Action aciton)
+        public static void TryRunOnGameThread(Action action)
         {
             FThreading.RunOnGameThread(() =>
             {
                 try
                 {
-                    aciton();
+                    action();
                 }
                 catch (Exception e)
                 {

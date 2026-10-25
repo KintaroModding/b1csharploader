@@ -21,12 +21,11 @@
         string Version { get; }
 
         /// <summary>
-        /// when mod loaded, will call OnInit
+        /// called when the mod is loaded
         /// </summary>
         void Init();
         /// <summary>
-        /// when manamger reload mods, will call OnDeInit,
-        ///
+        /// called before the manager reloads the mods
         /// </summary>
         void DeInit();
     }

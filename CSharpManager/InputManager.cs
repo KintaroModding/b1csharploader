@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading;
@@ -19,10 +18,6 @@ namespace CSharpManager
 
         private IntPtr HWnd;
 
-        public InputManager()
-        {
-        }
-
         private void FindMainWindow()
         {
             uint currentProcessId = GetCurrentProcessId();
@@ -30,7 +25,7 @@ namespace CSharpManager
             EnumWindows(new EnumWindowsProc((hWnd, lParam) =>
             {
                 GetWindowThreadProcessId(hWnd, out uint processId);
-                if (processId == GetCurrentProcessId() &&
+                if (processId == currentProcessId &&
                     GetClassName(hWnd, stringBuilder, stringBuilder.Capacity) > 0 &&
                     stringBuilder.ToString() == "UnrealWindow")
                 {

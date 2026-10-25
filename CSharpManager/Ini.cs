@@ -144,6 +144,8 @@ public class Ini
 
     bool endWithCRLF(StringBuilder sb)
     {
+        if (sb.Length < 2)
+            return false;
         if (sb.Length < 4)
             return sb[sb.Length - 2] == '\r' &&
                    sb[sb.Length - 1] == '\n';
