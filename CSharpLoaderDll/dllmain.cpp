@@ -3,6 +3,7 @@
 #include <mutex>
 #include "log.hpp"
 #include "memory.h"
+#include "overlay.hpp"
 #include "hid_dll.hpp"
 #include "version_dll.hpp"
 #include "plugin.hpp"
@@ -68,12 +69,16 @@ DWORD WINAPI MainThread(LPVOID dwModule)
     const char* configFile = "./CSharpLoader/b1cs.ini";
     UINT enableConsole = GetPrivateProfileIntA("Settings", "Console", 0, configFile);
     BOOL enableJit = GetPrivateProfileIntA("Settings", "EnableJit", 1, configFile);
+    UINT enableOverlay = GetPrivateProfileIntA("Settings", "Overlay", 1, configFile);
     if (enableConsole == 1) {
         AllocConsole();
         FILE* fDummy;
         freopen_s(&fDummy, "CONIN$", "r", stdin);
         freopen_s(&fDummy, "CONOUT$", "w", stdout);
         freopen_s(&fDummy, "CONOUT$", "w", stderr);
+    }
+    if (enableOverlay == 1) {
+        overlay_start(static_cast<HMODULE>(dwModule));
     }
     loadPluginDlls();
     log_info("CSharpLoader enableJit: %d", enableJit);

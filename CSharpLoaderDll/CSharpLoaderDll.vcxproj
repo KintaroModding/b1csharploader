@@ -157,6 +157,7 @@
     <ClInclude Include="hid_dll.hpp" />
     <ClInclude Include="log.hpp" />
     <ClInclude Include="memory.h" />
+    <ClInclude Include="overlay.hpp" />
     <ClInclude Include="pch.h" />
     <ClInclude Include="plugin.hpp" />
     <ClInclude Include="version_dll.hpp" />
@@ -166,6 +167,7 @@
     <ClCompile Include="hid_dll.cpp" />
     <ClCompile Include="log.cpp" />
     <ClCompile Include="memory.cpp" />
+    <ClCompile Include="overlay.cpp" />
     <ClCompile Include="pch.cpp">
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Create</PrecompiledHeader>
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">Create</PrecompiledHeader>
