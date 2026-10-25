@@ -56,11 +56,31 @@ BlackMythWukong/b1/Binaries/Win64/
 - `Develop`：开发模式，在游戏中按 Ctrl+F5 重新加载所有 C# mod。
 - `Console`：另外在单独的 Windows 控制台窗口中显示日志，用于排查问题。默认关闭。
 - `EnableJit`：开启 JIT 模式，见下文。
-- `Overlay`：游戏内控制台，显示日志。在游戏中按 F10 打开或关闭。
+- `Overlay`：游戏内控制台，显示日志，见下文。
+- `OverlayKey`：打开游戏内控制台的按键，默认 `F10`。可以是 `F1` 到 `F24`、一个字母或数字、`Insert`、`Delete`、`Home`、`End`、`Pause`、`ScrollLock`、`Tilde`，或者虚拟键码，例如 `0xC0`。
+
+### 游戏内控制台
 
 游戏内控制台是游戏上方一个可以点击穿透的独立窗口。它在窗口模式和无边框模式下可见，在独占全屏模式下可能不可见。
 
-加载器加载完 mod 后，游戏上方会显示一个横幅 5 秒，显示加载器版本和已加载的 mod 数量。
+- 在游戏中按 F10（或你设置的 `OverlayKey`）打开或关闭。
+- Page Up 和 Page Down 可以滚动查看最近 500 行。游戏也会收到这两个按键。
+- 标题下方列出已加载的 mod，加载失败的 mod 以红色显示。
+- 控制台关闭时，游戏右上角的红色小框会显示新错误的数量。
+
+### 横幅
+
+以下情况游戏上方会显示一个横幅 5 秒：
+
+- mod 加载完成时：显示加载器版本和已加载的 mod 数量，
+- 按 Ctrl+F5 之后：显示重新加载的 mod 数量，
+- 加载器无法启动时，例如游戏更新之后。
+
+加载器或 mod 失败时横幅为红色；游戏版本号与此加载器版本测试过的版本号不同时为黄色。
+
+### 日志文件
+
+加载器会把所有日志写入 `CSharpLoader/Logs`，每次启动游戏一个文件，保留最近 5 个。报告问题时请附上最新的日志文件。
 
 ### JIT 模式
 
@@ -101,6 +121,8 @@ python extract_dlls.py --exe "<游戏目录>/b1/Binaries/Win64/b1-Win64-Shipping
 ```
 
 脚本会更新 `GameDll` 中的 dll，并列出游戏中已经没有的文件。加上 `--dry-run` 只列出，不复制。
+
+然后把 `CSharpManager/CSharpModManager.cs` 中的 `TestedGameBuild` 改为新的版本号，即游戏版本的最后一部分（例如 `23831`），并更新本 README 和 `openmods.json` 中的游戏版本。
 
 ## mod 编写教程
 

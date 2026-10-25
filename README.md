@@ -56,11 +56,31 @@ The settings are in `CSharpLoader/b1cs.ini`. `1` turns a setting on, `0` turns i
 - `Develop`: press Ctrl+F5 in the game to reload all C# mods.
 - `Console`: also show the log in a separate Windows console window, for troubleshooting. Off by default.
 - `EnableJit`: turn on JIT mode, see below.
-- `Overlay`: show the log in an in-game console. Press F10 in the game to open and close it.
+- `Overlay`: show the log in an in-game console, see below.
+- `OverlayKey`: the key that opens the in-game console, `F10` by default. Possible values: `F1` to `F24`, a letter or a digit, `Insert`, `Delete`, `Home`, `End`, `Pause`, `ScrollLock`, `Tilde`, or a virtual key code like `0xC0`.
+
+### In-game console
 
 The in-game console is a separate, click-through window on top of the game. It shows in windowed and borderless mode, but it may not show in exclusive fullscreen.
 
-When the loader has loaded the mods, a banner at the top of the game shows the loader version and the number of loaded mods for 5 seconds.
+- Press F10 (or your `OverlayKey`) in the game to open and close it.
+- Page Up and Page Down scroll through the last 500 lines. The game also gets these keys.
+- Under the title, it lists the loaded mods, and in red the mods that failed to load.
+- While it is closed, a small red box in the top right corner counts the new errors.
+
+### Banners
+
+A banner at the top of the game shows for 5 seconds:
+
+- when the mods are loaded: the loader version and the number of loaded mods,
+- after Ctrl+F5: the number of reloaded mods,
+- when the loader cannot start, for example after a game update.
+
+The banner is red when the loader or a mod failed, and yellow when the game build is not the one this loader version was tested with.
+
+### Log files
+
+The loader writes all lines of the log to `CSharpLoader/Logs`, one file for each game start, and keeps the last 5 files. Add the newest one to a bug report.
 
 ### JIT mode
 
@@ -101,6 +121,8 @@ python extract_dlls.py --exe "<game folder>/b1/Binaries/Win64/b1-Win64-Shipping.
 ```
 
 The script updates the dlls in `GameDll` and lists the files that the game no longer contains. Add `--dry-run` to only list them.
+
+Then set `TestedGameBuild` in `CSharpManager/CSharpModManager.cs` to the new build number, the last part of the game version (for example `23831`), and update the game version in this README and in `openmods.json`.
 
 ## Make a mod
 
