@@ -54,11 +54,13 @@ To remove the loader, delete `version.dll` and the `CSharpLoader` folder.
 The settings are in `CSharpLoader/b1cs.ini`. `1` turns a setting on, `0` turns it off.
 
 - `Develop`: press Ctrl+F5 in the game to reload all C# mods.
-- `Console`: show a console window with the log.
+- `Console`: also show the log in a separate Windows console window, for troubleshooting. Off by default.
 - `EnableJit`: turn on JIT mode, see below.
 - `Overlay`: show the log in an in-game console. Press F10 in the game to open and close it.
 
 The in-game console is a separate, click-through window on top of the game. It shows in windowed and borderless mode, but it may not show in exclusive fullscreen.
+
+When the loader has loaded the mods, a banner at the top of the game shows the loader version and the number of loaded mods for 5 seconds.
 
 ### JIT mode
 

@@ -10,6 +10,7 @@ The loader does nothing on its own. Install it when a mod needs it.
 - Lets mods use the game's C# code and Unreal Engine.
 - Gives mods hotkeys: keyboard keys and gamepad buttons, also button combos.
 - Supports Harmony hooks, so mods can change game functions.
+- Shows the log in an in-game console: press F10.
 - Reloads all C# mods in the game with Ctrl+F5 (for mod makers).
 - Also loads other plugins that are named `version.dll`.
 
@@ -33,10 +34,12 @@ To remove the loader, delete `b1/Binaries/Win64/version.dll` and the folder `b1/
 
 The settings are in `b1/Binaries/Win64/CSharpLoader/b1cs.ini`. `1` turns a setting on, `0` turns it off.
 
-- `Console=1`: shows a console window with the log.
+- `Console=1`: also shows the log in a separate console window, for troubleshooting. Off by default.
 - `Develop=1`: press Ctrl+F5 in the game to reload all C# mods.
 - `EnableJit=1`: turns on JIT mode. Mods that use Harmony hooks need it. See Known issues.
 - `Overlay=1`: press F10 in the game to open and close an in-game console with the log.
+
+When the loader runs, a banner at the top of the game shows its version and the number of loaded mods for 5 seconds.
 
 Some mods need helper DLL files. Put them into the mod's own folder, or into `CSharpLoader/Mods/Common` to share them with all mods.
 
