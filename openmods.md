@@ -36,6 +36,7 @@ The settings are in `b1/Binaries/Win64/CSharpLoader/b1cs.ini`. `1` turns a setti
 - `Console=1`: shows a console window with the log.
 - `Develop=1`: press Ctrl+F5 in the game to reload all C# mods.
 - `EnableJit=1`: turns on JIT mode. Mods that use Harmony hooks need it. See Known issues.
+- `Overlay=1`: press F10 in the game to open and close an in-game console with the log.
 
 Some mods need helper DLL files. Put them into the mod's own folder, or into `CSharpLoader/Mods/Common` to share them with all mods.
 
@@ -52,6 +53,7 @@ Do you use another plugin that is also named `version.dll`? Rename it to any oth
 - JIT mode changes how the game runs its C# code. The game developer did not test this mode, so it can affect stability. If you have problems and your mods need no hooks, set `EnableJit=0`.
 - Gamepad hotkeys work only with Xbox (XInput) controllers. PlayStation and Switch controllers are not supported.
 - A game update can stop the loader until the loader gets an update too.
+- The in-game console (F10) may not show in exclusive fullscreen. Use borderless or windowed mode.
 
 ## How to build
 

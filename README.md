@@ -56,6 +56,9 @@ The settings are in `CSharpLoader/b1cs.ini`. `1` turns a setting on, `0` turns i
 - `Develop`: press Ctrl+F5 in the game to reload all C# mods.
 - `Console`: show a console window with the log.
 - `EnableJit`: turn on JIT mode, see below.
+- `Overlay`: show the log in an in-game console. Press F10 in the game to open and close it.
+
+The in-game console is a separate, click-through window on top of the game. It shows in windowed and borderless mode, but it may not show in exclusive fullscreen.
 
 ### JIT mode
 

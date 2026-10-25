@@ -56,6 +56,9 @@ BlackMythWukong/b1/Binaries/Win64/
 - `Develop`：开发模式，在游戏中按 Ctrl+F5 重新加载所有 C# mod。
 - `Console`：显示控制台窗口，打印日志。
 - `EnableJit`：开启 JIT 模式，见下文。
+- `Overlay`：游戏内控制台，显示日志。在游戏中按 F10 打开或关闭。
+
+游戏内控制台是游戏上方一个可以点击穿透的独立窗口。它在窗口模式和无边框模式下可见，在独占全屏模式下可能不可见。
 
 ### JIT 模式
 
