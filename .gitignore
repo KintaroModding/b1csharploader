@@ -82,3 +82,6 @@ ModelManifest.xml
 
 # Local temp files
 _temp/
+
+# Release packages from build.ps1
+dist/
