@@ -85,3 +85,7 @@ _temp/
 
 # Release packages from build.ps1
 dist/
+
+# Local Claude Code memory and settings (private)
+_memory/
+.claude/settings.local.json
