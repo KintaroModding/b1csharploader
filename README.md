@@ -1,15 +1,33 @@
-# 黑神话悟空CSharp加载器
+# C# Loader for Black Myth: Wukong
 
-[English](README.en.md)
+[中文](README.cn.md)
 
-## 关于
+> **This is a fork of [czastack/B1CSharpLoader](https://github.com/czastack/B1CSharpLoader).**
+>
+> [czastack](https://github.com/czastack) created C# Loader and wrote almost all of its code. All credit for the loader goes to them.
+>
+> The original project has had no code changes since October 2024. I ([KintaroModding](https://github.com/KintaroModding)) took it over to keep it alive: I keep it working with new game versions, fix bugs, and collect the fixes that other people sent to the original project. I am not the creator of this project, only the maintainer of this fork.
 
-黑神话悟空使用USharp作为脚本引擎，很多逻辑使用C#实现，提供接口给UE使用(见GameDll)，而一些内部接口不能通过UE c++/lua访问。  
-这个mod加载器可以加载c#写的mod。C# mod可以调用USharp端提供的api，包括游戏内部的和USharp包装的UE引擎的api，也可以往游戏内部的事件和委托增加回调。  
+## About
 
-## 使用说明
+Black Myth: Wukong uses USharp as its script engine, so much of the game's logic is written in C# (see [GameDll](GameDll)). Some of these APIs can only be reached from C#, not from Unreal Engine C++ or Lua.
 
-### 安装路径
+C# Loader loads mods that are written in C#. A C# mod can:
+
+- call the game's own C# APIs and the Unreal Engine APIs that USharp wraps,
+- add callbacks to the game's events and delegates,
+- register hotkeys for keyboard keys and gamepad buttons,
+- change game functions with [Harmony](https://harmony.pardeike.net) hooks.
+
+## Install
+
+1. Download the zip of the [latest release](https://github.com/KintaroModding/b1csharploader/releases/latest).
+2. Copy the `b1` folder from the zip into the game folder `BlackMythWukong`.
+3. Put each C# mod into its own folder: `CSharpLoader/Mods/<ModName>/<ModName>.dll`, for example `CSharpLoader/Mods/CSharpExample/CSharpExample.dll`.
+4. Start the game.
+
+After the install, the game folder looks like this:
+
 ```
 BlackMythWukong/b1/Binaries/Win64/
   CSharpLoader/
@@ -17,74 +35,75 @@ BlackMythWukong/b1/Binaries/Win64/
     Mods/
     Plugins/
     0Harmony.dll
+    b1cs.ini
     CSharpManager.bin
     CSharpModBase.dll
     Mono.Cecil.dll
+    Mono.Cecil.Mdb.dll
     Mono.Cecil.Pdb.dll
     Mono.Cecil.Rocks.dll
-    b1cs.ini
+    SharpDX.dll
+    SharpDX.XInput.dll
   version.dll
 ```
 
-mod的dll需要放在`CSharpLoader/Mods/<ModName>/<ModName>.dll`里面，例如`CSharpLoader/Mods/CSharpExample/CSharpExample.dll`
+To remove the loader, delete `version.dll` and the `CSharpLoader` folder.
 
-### 配置
+### Settings
 
-配置文件CSharpLoader/b1cs.ini
-Develop: 开启开发模式，可以按ctrl+f5重新加载C# mods
-Console: 显示控制台窗口，打印log
-EnableJit: 开启jit模式，请看下面的注意
+The settings are in `CSharpLoader/b1cs.ini`. `1` turns a setting on, `0` turns it off.
 
-### 注意
+- `Develop`: press Ctrl+F5 in the game to reload all C# mods.
+- `Console`: show a console window with the log.
+- `EnableJit`: turn on JIT mode, see below.
 
-0.0.7版本C# loader为了开启C# patch/hook特性，把游戏的mono运行时的运行模式从默认的解释执行模式，改成了jit(运行时编译执行)模式。jit一定程度上可能会带来一些性能提升，但可能并未经过游戏开发商的充分测试，可能会对游戏的稳定性带来一些影响。同时由于修改了游戏的底层执行代码，目前与一些修改器不兼容，包括风灵月影在内的一些修改器会失效，请根据你使用的mod的说明，决定是否使用支持hook的C# loader。
+### JIT mode
 
-### 与其他插件的兼容
+To make C# hooks possible, the loader switches the game's Mono runtime from its default interpreter mode to JIT (just-in-time compilation) mode. JIT mode can be faster, but the game developer did not test it, so it can affect the stability of the game. It also stops some trainers from working, for example FLiNG trainers.
 
-version.dll是常用的插件名字，如果你使用了其他有名称冲突的插件，可以把这些插件的dll，改成除version.dll外的其他名字（后缀得是.dll），放到CSharpLoader/Plugins/目录里，C# loader会一起加载这些插件
+Read the instructions of your mods: if none of them needs hooks, you can set `EnableJit=0`.
 
-## 模块介绍
+### Other plugins named version.dll
 
-- CSharpLoaderDll
-  - 加载器，用于调用mono api执行C#代码，加载器会在游戏启动后调用CSharpManager
-- CSharpManager
-  - C# mod管理器，加载和管理C# mod
-- CSharpModBase
-  - 提供给mod使用的接口
-- CSharpModExample
-  - mod示例
-- GameDll
-  - 游戏内的C# dll，写mod代码需要引用这些dll
+`version.dll` is a common name for game plugins. If another plugin also uses this name, rename its dll to any other name that ends with `.dll` and put it into `CSharpLoader/Plugins/`. The loader loads these plugins too.
 
-### 更新GameDll
+## Projects in this repository
 
-GameDll里是游戏版本1.0.21.23831的C# dll。游戏更新后，可以用脚本从游戏exe中重新提取（需要Python 3）：
+- `CSharpLoaderDll`: the native loader (C++). The game loads it as `version.dll`. It uses the Mono API to start `CSharpManager` after the game has started.
+- `CSharpManager`: the mod manager. It loads and manages the C# mods.
+- `CSharpModBase`: the API for mods.
+- `CSharpModExample`: an example mod.
+- `GameDll`: the game's C# dlls. Mod projects reference them.
+- `extract_dlls.py`: updates `GameDll` from the game exe.
+- `build.ps1`: builds everything and packs the release zip.
 
-```
-python extract_dlls.py --exe "<游戏目录>/b1/Binaries/Win64/b1-Win64-Shipping.exe"
-```
+### Build
 
-脚本会更新GameDll里的dll，并列出游戏中已经没有的文件。加上`--dry-run`只列出，不复制。
-
-## 编译
-
-在PowerShell中运行`build.ps1`，会编译全部项目，并把发布用的zip打包到`dist/`：
+Run `build.ps1` in PowerShell. It builds all projects and packs the release zip into `dist/`:
 
 ```
 powershell -ExecutionPolicy Bypass -File build.ps1 -Version 1.0.0
 ```
 
-需要安装Visual Studio 2022（或其生成工具）的C++工作负载，以及.NET SDK 8或更新版本。
+It needs Visual Studio 2022 (or its Build Tools) with the C++ workload, and the .NET SDK 8 or newer.
 
-## mod编写教程
+### Update GameDll
 
-建议安装.net 8 sdk，方便使用最新的语法。
-开发工具可以使用vscode, visual studio 或者 rider。
-示例工程可以参考CSharpModExample
+`GameDll` holds the C# dlls of game version 1.0.21.23831. After a game update, extract them again from the game exe (needs Python 3):
 
-### mod入口
+```
+python extract_dlls.py --exe "<game folder>/b1/Binaries/Win64/b1-Win64-Shipping.exe"
+```
 
-mod的类需要实现ICSharpMod接口
+The script updates the dlls in `GameDll` and lists the files that the game no longer contains. Add `--dry-run` to only list them.
+
+## Make a mod
+
+Install the [.NET 8 SDK](https://dotnet.microsoft.com/) or newer to use the latest C# syntax. You can write code with VS Code, Visual Studio or Rider. Start from the example in `CSharpModExample`.
+
+### Entry point
+
+Your mod implements `ICSharpMod`:
 
 ```C#
 public class MyMod : ICSharpMod
@@ -104,10 +123,11 @@ public class MyMod : ICSharpMod
 }
 ```
 
-Mod加载时会创建该类的实例，调用Init。Manager重新加载mod时会调用每个mod的DeInit()，再执行加载mod的流程。  
-Ctrl+F5重新加载Mod，Develop模式下，每次都会加载成新的Assembly，旧Asembly还会保留在进程中，所以请确保DeInit函数里结束mod的后台线程（如有）和事件监听，mod本身不用清理按键监听，Manager处理好。
+The manager creates an instance of each class that implements `ICSharpMod` and calls `Init()`.
 
-### 按键监听
+When you press Ctrl+F5 to reload the mods, the manager calls `DeInit()` of each loaded mod, then loads all mods again. In Develop mode, each reload loads the mod dll as a new assembly, and the old assembly stays in memory. So stop your background threads and remove your event handlers in `DeInit()`. You do not need to remove your key binds: the manager does that.
+
+### Key binds
 
 ```C#
 Utils.RegisterKeyBind(ModifierKeys.Alt, Key.X, () =>
@@ -116,16 +136,23 @@ Utils.RegisterKeyBind(ModifierKeys.Alt, Key.X, () =>
 });
 ```
 
-
-
-### C# hook
-
-参考 [harmony文档](https://harmony.pardeike.net/articles/patching.html)
-
-Init()里调用
+Gamepad buttons work the same way. When a player holds a button combo, only the bind with the most buttons fires:
 
 ```C#
-var harmony = new Harmony("myname");
+Utils.RegisterGamePadBind(GamePadButton.LeftShoulder | GamePadButton.A, () =>
+{
+
+});
+```
+
+### C# hooks
+
+See the [Harmony documentation](https://harmony.pardeike.net/articles/patching.html). Hooks need `EnableJit=1`.
+
+Call this in `Init()`:
+
+```C#
+var harmony = new Harmony("your name");
 var assembly = Assembly.GetExecutingAssembly();
 harmony.PatchAll(assembly);
 
@@ -133,27 +160,34 @@ harmony.PatchAll(assembly);
 harmony.PatchAll();
 ```
 
-DeInit()里调用
+Call this in `DeInit()`:
 
 ```C#
 harmony.UnpatchAll();
 ```
 
-### mod的其他依赖
-mod dll的依赖可以放在`CSharpLoader/Mods/<ModName>/`或者`CSharpLoader/Mods/Common/`中，这样其他Mod也能用里面的依赖
+### Mod dependencies
 
-## Fork的更改
+Put the dlls that your mod depends on into `CSharpLoader/Mods/<ModName>/`, or into `CSharpLoader/Mods/Common/` to share them with all mods.
 
-从原项目的pull request中采用的更改：
+## Fork changes
 
-- "fix: resolved gamepad combination key trigger issue"，作者 reece15
-- "Fix: Handle spaces in paths for move command in CSharpManager.csproj"，作者 TheFBplus
-- "Add script to extract embedded .NET assemblies from game exe"，作者 inkydragon
+Changes compared to the original project:
 
-根据原项目的issue做的修复：
+- `GameDll` updated for game version 1.0.21.23831, with a script to update it after game updates.
+- Bug fixes: hotkey repeat, gamepad button combos, error logs, paths with non-English characters, and the input thread at game exit.
+- A build script that makes the release zip.
 
-- "一堆BUG"，作者 bfxh
+Changes taken from pull requests to the original project:
 
-## 许可证
+- "fix: resolved gamepad combination key trigger issue" by reece15
+- "Fix: Handle spaces in paths for move command in CSharpManager.csproj" by TheFBplus
+- "Add script to extract embedded .NET assemblies from game exe" by inkydragon
 
-MIT，见[LICENSE](LICENSE)。`GameDll`中的dll来自游戏，归游戏开发商所有，只用于编译mod。
+Fixes based on issues in the original project:
+
+- "一堆BUG" by bfxh
+
+## License
+
+MIT, see [LICENSE](LICENSE). The dlls in `GameDll` come from the game and belong to its developer. They are only here so that mods can be built.

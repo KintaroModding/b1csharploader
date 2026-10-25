@@ -44,7 +44,7 @@ foreach ($file in $files) {
 }
 Copy-Item (Join-Path $root "CSharpManager\b1cs.ini") $loader
 Copy-Item (Join-Path $root "x64\Release\version.dll") $win64
-foreach ($file in "LICENSE", "README.md", "README.en.md") {
+foreach ($file in "LICENSE", "README.md", "README.cn.md") {
     Copy-Item (Join-Path $root $file) $pkg
 }
 
