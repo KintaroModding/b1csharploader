@@ -1,5 +1,9 @@
 #include "pch.h"
 #include "overlay.hpp"
+#include "log.hpp"
+#include <cstring>
+#include <cwchar>
+#include <cwctype>
 #include <deque>
 #include <iterator>
 #include <mutex>
@@ -8,38 +12,104 @@
 
 namespace {
     constexpr size_t MaxLines = 500;
-    constexpr int ToggleKey = VK_F10;
     constexpr BYTE WindowAlpha = 215;
     constexpr UINT_PTR TimerId = 1;
     constexpr UINT TimerMs = 50;
     constexpr ULONGLONG BannerMs = 5000;
     constexpr ULONGLONG BannerFadeMs = 600;
     constexpr COLORREF AccentColor = RGB(120, 160, 220);
+    constexpr COLORREF WarningColor = RGB(255, 215, 90);
+    constexpr COLORREF ErrorColor = RGB(255, 100, 100);
     const wchar_t ClassName[] = L"CSharpLoaderOverlay";
-    const wchar_t Header[] = L"C# Loader console  (F10 to close)";
+
+    struct NamedKey {
+        int key;
+        const wchar_t* name;
+    };
+    // keys that can open the console, besides F1-F24, A-Z, 0-9 and virtual key codes like 0xC0
+    const NamedKey NamedKeys[] = {
+        { VK_INSERT, L"Insert" }, { VK_DELETE, L"Delete" }, { VK_HOME, L"Home" }, { VK_END, L"End" },
+        { VK_PAUSE, L"Pause" }, { VK_SCROLL, L"ScrollLock" }, { VK_OEM_3, L"Tilde" },
+    };
+
+    // a small box on top of the game with a colored bar on the left: the banner and the error marker
+    struct Toast {
+        HWND hwnd = nullptr;
+        std::vector<std::wstring> lines;
+        bool hasTitle = false;  // the first line uses the big font
+        COLORREF accent = AccentColor;
+        RECT rect{};
+    };
 
     std::mutex stateMutex;
-    std::deque<std::wstring> lines;   // guarded by stateMutex
-    bool linesChanged = false;        // guarded by stateMutex
-    std::wstring bannerText;          // guarded by stateMutex
-    bool bannerPending = false;       // guarded by stateMutex
+    std::deque<std::wstring> lines;       // guarded by stateMutex
+    unsigned long long lineCount = 0;     // all lines ever added, guarded by stateMutex
+    int unseenErrors = 0;                 // error lines while the console is closed, guarded by stateMutex
+    std::vector<std::wstring> infoLines;  // shown under the console header, guarded by stateMutex
+    bool consoleChanged = false;          // guarded by stateMutex
+    std::wstring bannerText;              // guarded by stateMutex
+    int bannerLevel = BannerInfo;         // guarded by stateMutex
+    bool bannerPending = false;           // guarded by stateMutex
+
+    // set before the overlay thread starts
+    int toggleKey = VK_F10;
+    std::wstring toggleKeyName = L"F10";
 
     // only used on the overlay thread
     HWND consoleHwnd = nullptr;
-    HWND bannerHwnd = nullptr;
     HWND gameHwnd = nullptr;
+    Toast banner;
+    Toast marker;
     bool consoleOpen = false;
-    bool keyWasDown = false;
+    bool toggleWasDown = false;
+    bool pageUpWasDown = false;
+    bool pageDownWasDown = false;
+    size_t scrollOffset = 0;  // lines from the newest one, 0 follows new lines
+    size_t pageLines = 1;     // log lines that fit into the console
+    unsigned long long seenLineCount = 0;
+    int markerErrors = 0;
     HFONT font = nullptr;
     HFONT titleFont = nullptr;
     HFONT textFont = nullptr;
     int consoleFontHeight = 0;
     int bannerFontHeight = 0;
     RECT consoleRect{};
-    RECT bannerRect{};
-    std::vector<std::wstring> bannerLines;
     ULONGLONG bannerUntil = 0;
     BYTE bannerAlpha = WindowAlpha;
+
+    // returns the virtual key code and sets displayName, 0 when the name is unknown
+    int parse_key(const std::wstring& name, std::wstring& displayName) {
+        wchar_t* end = nullptr;
+        if (name.size() >= 2 && towupper(name[0]) == L'F') {
+            const long number = wcstol(name.c_str() + 1, &end, 10);
+            if (*end == L'\0' && number >= 1 && number <= 24) {
+                displayName = L"F" + std::to_wstring(number);
+                return VK_F1 + number - 1;
+            }
+        }
+        if (name.size() == 1) {
+            const wchar_t c = towupper(name[0]);
+            if ((c >= L'A' && c <= L'Z') || (c >= L'0' && c <= L'9')) {
+                displayName = std::wstring(1, c);
+                return c;
+            }
+        }
+        for (const auto& named : NamedKeys) {
+            if (_wcsicmp(name.c_str(), named.name) == 0) {
+                displayName = named.name;
+                return named.key;
+            }
+        }
+        if (name.size() > 2 && name[0] == L'0' && towupper(name[1]) == L'X') {
+            const long code = wcstol(name.c_str() + 2, &end, 16);
+            // Page Up and Page Down scroll the console
+            if (*end == L'\0' && code > 0 && code < 0xFF && code != VK_PRIOR && code != VK_NEXT) {
+                displayName = name;
+                return code;
+            }
+        }
+        return 0;
+    }
 
     BOOL CALLBACK find_game_window_proc(HWND hwnd, LPARAM lParam) {
         DWORD processId = 0;
@@ -60,16 +130,26 @@ namespace {
         return found;
     }
 
-    // lines look like "MM-dd HH:mm:ss [E] message", color them by level
+    // lines look like "MM-dd HH:mm:ss [E] message"
+    wchar_t line_level(const std::wstring& line) {
+        return line.size() > 17 && line[15] == L'[' && line[17] == L']' ? line[16] : L'\0';
+    }
+
     COLORREF line_color(const std::wstring& line) {
-        if (line.size() > 17 && line[15] == L'[' && line[17] == L']') {
-            switch (line[16]) {
-            case L'E': return RGB(255, 100, 100);
-            case L'W': return RGB(255, 215, 90);
-            case L'D': return RGB(160, 160, 160);
-            }
+        switch (line_level(line)) {
+        case L'E': return ErrorColor;
+        case L'W': return WarningColor;
+        case L'D': return RGB(160, 160, 160);
         }
         return RGB(230, 230, 230);
+    }
+
+    COLORREF level_color(int level) {
+        switch (level) {
+        case BannerError: return ErrorColor;
+        case BannerWarning: return WarningColor;
+        }
+        return AccentColor;
     }
 
     std::vector<std::wstring> split_lines(const std::wstring& text) {
@@ -81,6 +161,13 @@ namespace {
         }
         result.push_back(text.substr(start));
         return result;
+    }
+
+    bool key_pressed(int key, bool& wasDown) {
+        const bool down = (GetAsyncKeyState(key) & 0x8000) != 0;
+        const bool pressed = down && !wasDown;
+        wasDown = down;
+        return pressed;
     }
 
     HFONT create_font(int height, int weight, DWORD pitchAndFamily, const wchar_t* face) {
@@ -105,21 +192,24 @@ namespace {
         font = create_font(consoleHeight, FW_NORMAL, FIXED_PITCH | FF_MODERN, L"Consolas");
         titleFont = create_font(bannerHeight * 7 / 5, FW_SEMIBOLD, VARIABLE_PITCH | FF_SWISS, L"Segoe UI");
         textFont = create_font(bannerHeight, FW_NORMAL, VARIABLE_PITCH | FF_SWISS, L"Segoe UI");
+        // the toasts need a new size
+        banner.rect = {};
+        marker.rect = {};
     }
 
-    int banner_bar_width() {
+    int toast_bar_width() {
         return (std::max)(3, bannerFontHeight / 5);
     }
 
-    // measures the banner, and draws it when draw is true
-    SIZE banner_layout(HDC dc, bool draw) {
-        const int padding = bannerFontHeight;
-        const int x = banner_bar_width() + padding;
+    // measures the toast, and draws it when draw is true
+    SIZE toast_layout(HDC dc, const Toast& toast, bool draw) {
+        const int padding = toast.hasTitle ? bannerFontHeight : bannerFontHeight * 2 / 3;
+        const int x = toast_bar_width() + padding;
         int y = padding * 3 / 4;
         int width = 0;
-        for (size_t i = 0; i < bannerLines.size(); i++) {
-            const std::wstring& line = bannerLines[i];
-            SelectObject(dc, i == 0 ? titleFont : textFont);
+        for (size_t i = 0; i < toast.lines.size(); i++) {
+            const std::wstring& line = toast.lines[i];
+            SelectObject(dc, toast.hasTitle && i == 0 ? titleFont : textFont);
             SIZE extent{};
             GetTextExtentPoint32W(dc, line.c_str(), static_cast<int>(line.size()), &extent);
             if (draw) {
@@ -132,12 +222,26 @@ namespace {
         return SIZE{ x + width + padding, y + padding * 3 / 4 };
     }
 
-    void draw_banner(HDC dc, const RECT& rc) {
-        RECT bar{ 0, 0, banner_bar_width(), rc.bottom };
-        HBRUSH accent = CreateSolidBrush(AccentColor);
+    SIZE measure_toast(const Toast& toast) {
+        HDC dc = GetDC(toast.hwnd);
+        HGDIOBJ oldFont = GetCurrentObject(dc, OBJ_FONT);
+        const SIZE size = toast_layout(dc, toast, false);
+        SelectObject(dc, oldFont);
+        ReleaseDC(toast.hwnd, dc);
+        return size;
+    }
+
+    void draw_toast(HDC dc, const RECT& rc, const Toast& toast) {
+        RECT bar{ 0, 0, toast_bar_width(), rc.bottom };
+        HBRUSH accent = CreateSolidBrush(toast.accent);
         FillRect(dc, &bar, accent);
         DeleteObject(accent);
-        banner_layout(dc, true);
+        toast_layout(dc, toast, true);
+    }
+
+    void draw_text_line(HDC dc, const std::wstring& text, int x, int y, int right, int lineHeight) {
+        RECT lineRect{ x, y, right, y + lineHeight };
+        ExtTextOutW(dc, x, y, ETO_CLIPPED, &lineRect, text.c_str(), static_cast<UINT>(text.size()), nullptr);
     }
 
     void draw_console(HDC dc, const RECT& rc) {
@@ -146,23 +250,41 @@ namespace {
         GetTextMetricsW(dc, &tm);
         const int lineHeight = (std::max)(1, static_cast<int>(tm.tmHeight));
         const int padding = lineHeight / 2;
-        int y = padding;
 
-        SetTextColor(dc, AccentColor);
-        TextOutW(dc, padding, y, Header, static_cast<int>(wcslen(Header)));
-        y += lineHeight + padding;
-
-        const int maxLines = (std::max)(0, (static_cast<int>(rc.bottom) - y - padding) / lineHeight);
+        std::vector<std::wstring> info;
         std::vector<std::wstring> visibleLines;
         {
             std::lock_guard<std::mutex> lock(stateMutex);
-            const size_t count = (std::min)(lines.size(), static_cast<size_t>(maxLines));
-            visibleLines.assign(lines.end() - count, lines.end());
+            info = infoLines;
+            const int top = padding + lineHeight * static_cast<int>(1 + info.size()) + padding;
+            const size_t maxLines = static_cast<size_t>((std::max)(0, (static_cast<int>(rc.bottom) - top - padding) / lineHeight));
+            pageLines = (std::max)(static_cast<size_t>(1), maxLines);
+            const size_t maxOffset = lines.size() > maxLines ? lines.size() - maxLines : 0;
+            scrollOffset = (std::min)(scrollOffset, maxOffset);
+            const size_t end = lines.size() - scrollOffset;
+            const size_t begin = end - (std::min)(end, maxLines);
+            visibleLines.assign(lines.begin() + begin, lines.begin() + end);
         }
+
+        int y = padding;
+        std::wstring header = L"C# Loader console  \u00B7  " + toggleKeyName + L" closes  \u00B7  Page Up / Page Down scroll";
+        if (scrollOffset > 0) {
+            header += L"  \u00B7  scrolled up";
+        }
+        SetTextColor(dc, AccentColor);
+        draw_text_line(dc, header, padding, y, rc.right - padding, lineHeight);
+        y += lineHeight;
+        for (const auto& line : info) {
+            // info lines that start with '!' show in red
+            const bool error = !line.empty() && line[0] == L'!';
+            SetTextColor(dc, error ? ErrorColor : RGB(175, 175, 175));
+            draw_text_line(dc, error ? line.substr(1) : line, padding, y, rc.right - padding, lineHeight);
+            y += lineHeight;
+        }
+        y += padding;
         for (const auto& line : visibleLines) {
             SetTextColor(dc, line_color(line));
-            RECT lineRect{ padding, y, rc.right - padding, y + lineHeight };
-            ExtTextOutW(dc, padding, y, ETO_CLIPPED, &lineRect, line.c_str(), static_cast<UINT>(line.size()), nullptr);
+            draw_text_line(dc, line, padding, y, rc.right - padding, lineHeight);
             y += lineHeight;
         }
     }
@@ -180,8 +302,10 @@ namespace {
         HGDIOBJ oldFont = GetCurrentObject(mem, OBJ_FONT);
         FillRect(mem, &rc, static_cast<HBRUSH>(GetStockObject(BLACK_BRUSH)));
         SetBkMode(mem, TRANSPARENT);
-        if (hwnd == bannerHwnd) {
-            draw_banner(mem, rc);
+        if (hwnd == banner.hwnd) {
+            draw_toast(mem, rc, banner);
+        } else if (hwnd == marker.hwnd) {
+            draw_toast(mem, rc, marker);
         } else {
             draw_console(mem, rc);
         }
@@ -217,20 +341,14 @@ namespace {
     }
 
     // area: the game's client area on the screen, nullptr when nothing may show
-    void update_console(const RECT* area) {
+    void update_console(const RECT* area, bool changed) {
         if (!consoleOpen || area == nullptr) {
             hide(consoleHwnd);
             return;
         }
         // the top 40% of the game
         RECT target{ area->left, area->top, area->right, area->top + (area->bottom - area->top) * 2 / 5 };
-        bool redraw = place(consoleHwnd, target, consoleRect);
-        {
-            std::lock_guard<std::mutex> lock(stateMutex);
-            redraw = redraw || linesChanged;
-            linesChanged = false;
-        }
-        if (redraw) {
+        if (place(consoleHwnd, target, consoleRect) || changed) {
             InvalidateRect(consoleHwnd, nullptr, FALSE);
         }
     }
@@ -242,37 +360,54 @@ namespace {
             if (bannerPending) {
                 // the 5 seconds start when the banner can show
                 bannerPending = false;
-                bannerLines = split_lines(bannerText);
+                banner.lines = split_lines(bannerText);
+                banner.accent = level_color(bannerLevel);
+                banner.rect = {};
                 bannerUntil = now + BannerMs;
-                bannerRect = {};
             }
         }
         if (area == nullptr || consoleOpen || now >= bannerUntil) {
-            hide(bannerHwnd);
+            hide(banner.hwnd);
             return;
         }
 
-        HDC dc = GetDC(bannerHwnd);
-        HGDIOBJ oldFont = GetCurrentObject(dc, OBJ_FONT);
-        const SIZE size = banner_layout(dc, false);
-        SelectObject(dc, oldFont);
-        ReleaseDC(bannerHwnd, dc);
-
         // top center of the game
+        const SIZE size = measure_toast(banner);
         const int x = area->left + (area->right - area->left - size.cx) / 2;
         const int y = area->top + (area->bottom - area->top) / 16;
         RECT target{ x, y, x + size.cx, y + size.cy };
-        const bool redraw = place(bannerHwnd, target, bannerRect);
+        const bool redraw = place(banner.hwnd, target, banner.rect);
 
         // fade out at the end
         const ULONGLONG remaining = bannerUntil - now;
         const BYTE alpha = remaining < BannerFadeMs ? static_cast<BYTE>(WindowAlpha * remaining / BannerFadeMs) : WindowAlpha;
         if (alpha != bannerAlpha) {
             bannerAlpha = alpha;
-            SetLayeredWindowAttributes(bannerHwnd, 0, alpha, LWA_ALPHA);
+            SetLayeredWindowAttributes(banner.hwnd, 0, alpha, LWA_ALPHA);
         }
         if (redraw) {
-            InvalidateRect(bannerHwnd, nullptr, FALSE);
+            InvalidateRect(banner.hwnd, nullptr, FALSE);
+        }
+    }
+
+    // a small red box in the top right corner while there are errors the player has not seen
+    void update_marker(const RECT* area, int errors) {
+        if (area == nullptr || consoleOpen || errors == 0) {
+            hide(marker.hwnd);
+            return;
+        }
+        if (errors != markerErrors) {
+            markerErrors = errors;
+            marker.lines = { errors == 1
+                ? L"1 new error  \u00B7  " + toggleKeyName + L" shows it"
+                : std::to_wstring(errors) + L" new errors  \u00B7  " + toggleKeyName + L" shows them" };
+            marker.rect = {};
+        }
+        const SIZE size = measure_toast(marker);
+        const int margin = (area->bottom - area->top) / 40;
+        RECT target{ area->right - margin - size.cx, area->top + margin, area->right - margin, area->top + margin + size.cy };
+        if (place(marker.hwnd, target, marker.rect)) {
+            InvalidateRect(marker.hwnd, nullptr, FALSE);
         }
     }
 
@@ -282,11 +417,39 @@ namespace {
             gameHwnd = find_game_window();
         }
         const bool focused = gameHwnd != nullptr && GetForegroundWindow() == gameHwnd && !IsIconic(gameHwnd);
-        const bool keyDown = (GetAsyncKeyState(ToggleKey) & 0x8000) != 0;
-        if (keyDown && !keyWasDown && focused) {
+        const bool togglePressed = key_pressed(toggleKey, toggleWasDown);
+        const bool pageUpPressed = key_pressed(VK_PRIOR, pageUpWasDown);
+        const bool pageDownPressed = key_pressed(VK_NEXT, pageDownWasDown);
+
+        bool changed = false;
+        if (togglePressed && focused) {
             consoleOpen = !consoleOpen;
+            scrollOffset = 0;
         }
-        keyWasDown = keyDown;
+        if (consoleOpen && focused && pageUpPressed) {
+            scrollOffset += pageLines;
+            changed = true;
+        }
+        if (consoleOpen && focused && pageDownPressed) {
+            scrollOffset = scrollOffset > pageLines ? scrollOffset - pageLines : 0;
+            changed = true;
+        }
+
+        int errors = 0;
+        {
+            std::lock_guard<std::mutex> lock(stateMutex);
+            // keep the view in place while scrolled up
+            if (scrollOffset > 0) {
+                scrollOffset += static_cast<size_t>(lineCount - seenLineCount);
+            }
+            seenLineCount = lineCount;
+            if (consoleOpen) {
+                unseenErrors = 0;
+            }
+            errors = unseenErrors;
+            changed = changed || consoleChanged;
+            consoleChanged = false;
+        }
 
         RECT area{};
         bool hasArea = false;
@@ -299,8 +462,9 @@ namespace {
                 update_fonts(client.bottom);
             }
         }
-        update_console(hasArea ? &area : nullptr);
+        update_console(hasArea ? &area : nullptr, changed);
         update_banner(hasArea ? &area : nullptr);
+        update_marker(hasArea ? &area : nullptr, errors);
     }
 
     LRESULT CALLBACK window_proc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
@@ -337,8 +501,11 @@ namespace {
             return EXIT_FAILURE;
         }
         consoleHwnd = create_overlay_window(wc.hInstance);
-        bannerHwnd = create_overlay_window(wc.hInstance);
-        if (consoleHwnd == nullptr || bannerHwnd == nullptr) {
+        banner.hwnd = create_overlay_window(wc.hInstance);
+        banner.hasTitle = true;
+        marker.hwnd = create_overlay_window(wc.hInstance);
+        marker.accent = ErrorColor;
+        if (consoleHwnd == nullptr || banner.hwnd == nullptr || marker.hwnd == nullptr) {
             return EXIT_FAILURE;
         }
         SetTimer(consoleHwnd, TimerId, TimerMs, nullptr);
@@ -352,11 +519,24 @@ namespace {
     }
 }
 
-void overlay_start(HMODULE module) {
+void overlay_start(HMODULE module, const char* keyName) {
+    const std::wstring name(keyName, keyName + strlen(keyName));
+    std::wstring displayName;
+    const int key = parse_key(name, displayName);
+    if (key != 0) {
+        toggleKey = key;
+        toggleKeyName = displayName;
+    } else {
+        log_error("OverlayKey \"%s\" is unknown, using F10.", keyName);
+    }
     HANDLE thread = CreateThread(nullptr, 0, overlay_thread, module, 0, nullptr);
     if (thread != nullptr) {
         CloseHandle(thread);
     }
+}
+
+const wchar_t* overlay_key_name() {
+    return toggleKeyName.c_str();
 }
 
 void overlay_add_line(const wchar_t* line) {
@@ -365,28 +545,45 @@ void overlay_add_line(const wchar_t* line) {
     for (size_t pos = text.find(L'\t'); pos != std::wstring::npos; pos = text.find(L'\t', pos)) {
         text.replace(pos, 1, L"    ");
     }
+    const bool error = line_level(text) == L'E';
     std::lock_guard<std::mutex> lock(stateMutex);
     lines.push_back(std::move(text));
     if (lines.size() > MaxLines) {
         lines.pop_front();
     }
-    linesChanged = true;
+    lineCount++;
+    if (error) {
+        unseenErrors++;
+    }
+    consoleChanged = true;
 }
 
-void overlay_show_banner(const wchar_t* text) {
+void overlay_show_banner(const wchar_t* text, int level) {
     std::lock_guard<std::mutex> lock(stateMutex);
     bannerText = text;
+    bannerLevel = level;
     bannerPending = true;
 }
 
-extern "C" __declspec(dllexport) void CSharpLoader_LogLine(const wchar_t* line) {
-    if (line != nullptr) {
-        overlay_add_line(line);
+void overlay_set_info(const wchar_t* text) {
+    std::vector<std::wstring> info = text[0] == L'\0' ? std::vector<std::wstring>() : split_lines(text);
+    std::lock_guard<std::mutex> lock(stateMutex);
+    infoLines = std::move(info);
+    consoleChanged = true;
+}
+
+extern "C" __declspec(dllexport) void CSharpLoader_ShowBanner(const wchar_t* text, int level) {
+    if (text != nullptr) {
+        overlay_show_banner(text, level);
     }
 }
 
-extern "C" __declspec(dllexport) void CSharpLoader_ShowBanner(const wchar_t* text) {
+extern "C" __declspec(dllexport) void CSharpLoader_SetConsoleInfo(const wchar_t* text) {
     if (text != nullptr) {
-        overlay_show_banner(text);
+        overlay_set_info(text);
     }
+}
+
+extern "C" __declspec(dllexport) const wchar_t* CSharpLoader_GetOverlayKey() {
+    return overlay_key_name();
 }
