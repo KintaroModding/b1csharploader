@@ -33,7 +33,8 @@ namespace {
     HFONT font = nullptr;
     HFONT titleFont = nullptr;
     HFONT textFont = nullptr;
-    int fontHeight = 0;
+    int consoleFontHeight = 0;
+    int bannerFontHeight = 0;
     RECT consoleRect{};
     RECT bannerRect{};
     std::vector<std::wstring> bannerLines;
@@ -87,10 +88,11 @@ namespace {
             CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY, pitchAndFamily, face);
     }
 
-    // the text size follows the game's height
+    // the text sizes follow the game's height
     void update_fonts(int clientHeight) {
-        const int height = (std::max)(10, clientHeight * 7 / 540);
-        if (font != nullptr && height == fontHeight) {
+        const int consoleHeight = (std::max)(8, clientHeight * 7 / 540 - 2);  // 12 px at 1080p
+        const int bannerHeight = (std::max)(14, clientHeight / 54);           // 20 px at 1080p
+        if (font != nullptr && consoleHeight == consoleFontHeight && bannerHeight == bannerFontHeight) {
             return;
         }
         for (HFONT old : { font, titleFont, textFont }) {
@@ -98,19 +100,20 @@ namespace {
                 DeleteObject(old);
             }
         }
-        fontHeight = height;
-        font = create_font(height, FW_NORMAL, FIXED_PITCH | FF_MODERN, L"Consolas");
-        titleFont = create_font(height * 7 / 5, FW_SEMIBOLD, VARIABLE_PITCH | FF_SWISS, L"Segoe UI");
-        textFont = create_font(height, FW_NORMAL, VARIABLE_PITCH | FF_SWISS, L"Segoe UI");
+        consoleFontHeight = consoleHeight;
+        bannerFontHeight = bannerHeight;
+        font = create_font(consoleHeight, FW_NORMAL, FIXED_PITCH | FF_MODERN, L"Consolas");
+        titleFont = create_font(bannerHeight * 7 / 5, FW_SEMIBOLD, VARIABLE_PITCH | FF_SWISS, L"Segoe UI");
+        textFont = create_font(bannerHeight, FW_NORMAL, VARIABLE_PITCH | FF_SWISS, L"Segoe UI");
     }
 
     int banner_bar_width() {
-        return (std::max)(3, fontHeight / 5);
+        return (std::max)(3, bannerFontHeight / 5);
     }
 
     // measures the banner, and draws it when draw is true
     SIZE banner_layout(HDC dc, bool draw) {
-        const int padding = fontHeight;
+        const int padding = bannerFontHeight;
         const int x = banner_bar_width() + padding;
         int y = padding * 3 / 4;
         int width = 0;
