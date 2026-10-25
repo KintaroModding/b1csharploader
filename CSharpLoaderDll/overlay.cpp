@@ -89,7 +89,7 @@ namespace {
 
     // the text size follows the game's height
     void update_fonts(int clientHeight) {
-        const int height = (std::max)(14, clientHeight / 54);
+        const int height = (std::max)(10, clientHeight * 7 / 540);
         if (font != nullptr && height == fontHeight) {
             return;
         }
