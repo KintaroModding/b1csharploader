@@ -134,4 +134,10 @@ Mod depends dll can put in `CSharpLoader/Mods/<ModName>/` or `CSharpLoader/Mods/
 
 Changes taken from pull requests to the original project:
 
+- "fix: resolved gamepad combination key trigger issue" by reece15
+- "Fix: Handle spaces in paths for move command in CSharpManager.csproj" by TheFBplus
 - "Add script to extract embedded .NET assemblies from game exe" by inkydragon
+
+Fixes based on issues in the original project:
+
+- "一堆BUG" by bfxh

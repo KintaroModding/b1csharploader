@@ -136,4 +136,10 @@ mod dll的依赖可以放在`CSharpLoader/Mods/<ModName>/`或者`CSharpLoader/Mo
 
 从原项目的pull request中采用的更改：
 
+- "fix: resolved gamepad combination key trigger issue"，作者 reece15
+- "Fix: Handle spaces in paths for move command in CSharpManager.csproj"，作者 TheFBplus
 - "Add script to extract embedded .NET assemblies from game exe"，作者 inkydragon
+
+根据原项目的issue做的修复：
+
+- "一堆BUG"，作者 bfxh
