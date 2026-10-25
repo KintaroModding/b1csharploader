@@ -1,6 +1,7 @@
 ﻿// dllmain.cpp : 定义 DLL 应用程序的入口点。
 #include "pch.h"
 #include <iostream>
+#include <mutex>
 #include "memory.h"
 #include "hid_dll.hpp"
 #include "version_dll.hpp"
@@ -79,14 +80,14 @@ DWORD WINAPI MainThread(LPVOID dwModule)
     std::cout << "CSharpLoader wait for init." << std::endl;
     // enable jit
     if (enableJit) {
-        uint64_t memory_fuction_ptr = signature("83 3D ? ? ? ? 00 0F 84 ? ? ? ? C7 84 24 ? ? 00 00 01 00 00 00").GetPointer();
-        if (memory_fuction_ptr == 0) {
+        uint64_t memory_function_ptr = signature("83 3D ? ? ? ? 00 0F 84 ? ? ? ? C7 84 24 ? ? 00 00 01 00 00 00").GetPointer();
+        if (memory_function_ptr == 0) {
             std::cout << "memory function signature not found." << std::endl;
         } else {
             DWORD old_protect;
-            if (VirtualProtect((void*)(memory_fuction_ptr + 7), 2, PAGE_EXECUTE_READWRITE, &old_protect)) {
-                *(uint16_t*)(memory_fuction_ptr + 7) = 0xE990;  // nop; jmp
-                VirtualProtect((void*)(memory_fuction_ptr + 7), 2, old_protect, &old_protect);
+            if (VirtualProtect((void*)(memory_function_ptr + 7), 2, PAGE_EXECUTE_READWRITE, &old_protect)) {
+                *(uint16_t*)(memory_function_ptr + 7) = 0xE990;  // nop; jmp
+                VirtualProtect((void*)(memory_function_ptr + 7), 2, old_protect, &old_protect);
                 uint64_t mono_mode_ptr = signature("48 8D 0D ? ? ? ? E8 ? ? ? ? 89 44 24 ? 83 7C 24 ? 00").GetPointer();
                 if (mono_mode_ptr == 0) {
                     std::cout << "mono_mode signature not found." << std::endl;
@@ -205,7 +206,10 @@ void init_dll(HMODULE hModule) {
         dllType = DllType::Hid;
         init_hid_dll();
     }
-    CreateThread(nullptr, 0, MainThread, hModule, 0, nullptr);
+    HANDLE thread = CreateThread(nullptr, 0, MainThread, hModule, 0, nullptr);
+    if (thread != nullptr) {
+        CloseHandle(thread);
+    }
 }
 
 void deinit_dll() {

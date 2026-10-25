@@ -50,6 +50,7 @@ void recursiveFileEnumerator(const wchar_t* path, const std::function<void(const
             }
         }
     } while(FindNextFileW(h, &wfd));
+    FindClose(h);
 }
 
 
@@ -90,7 +91,7 @@ void unloadPluginDlls() {
     for(auto it = hModules.rbegin(); it != hModules.rend(); ++it) {
         const auto h = *it;
         if(h != nullptr) {
-            wprintf(L"unloadPluginDlls : unload %s (hModules=0x%p)", getModuleFilenameW(h).data(), h);
+            wprintf(L"unloadPluginDlls : unload %s (hModules=0x%p)\n", getModuleFilenameW(h).data(), h);
             FreeLibrary(h);
         }
     }
