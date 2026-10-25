@@ -158,7 +158,8 @@ namespace CSharpManager
             InputManager.RegisterBuiltinKeyBind(ModifierKeys.Control, Key.F5, ReloadMods);
             loopThread = new Thread(Loop)
             {
-                // IsBackground = true,
+                // a foreground thread can keep the game process from exiting
+                IsBackground = true,
             };
             loopThread.Start();
         }
