@@ -104,7 +104,7 @@ namespace CSharpManager
                         assemblyDef.Name.Name += DateTime.Now.ToString("_yyyyMMdd_HHmmssffff");
                         using MemoryStream stream = new();
                         assemblyDef.Write(stream);
-                        assembly = Assembly.Load(stream.GetBuffer());
+                        assembly = Assembly.Load(stream.ToArray());
                     }
                     else
                     {

@@ -81,7 +81,7 @@ DWORD WINAPI MainThread(LPVOID dwModule)
     if (enableJit) {
         uint64_t memory_fuction_ptr = signature("83 3D ? ? ? ? 00 0F 84 ? ? ? ? C7 84 24 ? ? 00 00 01 00 00 00").GetPointer();
         if (memory_fuction_ptr == 0) {
-            std::cout << "memory function signature found." << std::endl;
+            std::cout << "memory function signature not found." << std::endl;
         } else {
             DWORD old_protect;
             if (VirtualProtect((void*)(memory_fuction_ptr + 7), 2, PAGE_EXECUTE_READWRITE, &old_protect)) {
@@ -89,7 +89,7 @@ DWORD WINAPI MainThread(LPVOID dwModule)
                 VirtualProtect((void*)(memory_fuction_ptr + 7), 2, old_protect, &old_protect);
                 uint64_t mono_mode_ptr = signature("48 8D 0D ? ? ? ? E8 ? ? ? ? 89 44 24 ? 83 7C 24 ? 00").GetPointer();
                 if (mono_mode_ptr == 0) {
-                    std::cout << "mono_mode signature found." << std::endl;
+                    std::cout << "mono_mode signature not found." << std::endl;
                 } else {
                     if (VirtualProtect((void*)(mono_mode_ptr + 7), 5, PAGE_EXECUTE_READWRITE, &old_protect)) {
                         *(uint8_t*)(mono_mode_ptr + 7) = 0xB8;
@@ -153,10 +153,17 @@ DWORD WINAPI MainThread(LPVOID dwModule)
     MonoImageOpenStatus status = MonoImageOpenStatus::MONO_IMAGE_OK;
 
     wchar_t fullFilename[MAX_PATH];
-    GetFullPathName(L"CSharpLoader\\CSharpManager.bin", MAX_PATH, fullFilename, nullptr);
-    char fullFilenameA[MAX_PATH];
-    // convert to utf-8 to support Chinese path
-    WideCharToMultiByte(CP_UTF8, 0, fullFilename, MAX_PATH, fullFilenameA, MAX_PATH, NULL, NULL);
+    DWORD fullFilenameLen = GetFullPathNameW(L"CSharpLoader\\CSharpManager.bin", MAX_PATH, fullFilename, nullptr);
+    if (fullFilenameLen == 0 || fullFilenameLen >= MAX_PATH) {
+        std::cout << "GetFullPathName failed." << std::endl;
+        return EXIT_FAILURE;
+    }
+    // convert to utf-8 to support Chinese path, one utf-16 unit needs at most 3 utf-8 bytes
+    char fullFilenameA[MAX_PATH * 3];
+    if (WideCharToMultiByte(CP_UTF8, 0, fullFilename, -1, fullFilenameA, static_cast<int>(std::size(fullFilenameA)), NULL, NULL) == 0) {
+        std::cout << "convert path to utf-8 failed." << std::endl;
+        return EXIT_FAILURE;
+    }
     void* assembly = mono_assembly_request_open(fullFilenameA, &open_request, &status);
     if (assembly == nullptr) {
         std::cout << "mono_assembly_request_open failed." << std::endl;

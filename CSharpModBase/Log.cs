@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.Reflection;
 
 namespace CSharpModBase
 {
@@ -54,8 +55,18 @@ namespace CSharpModBase
 
         public static void Error(Exception e)
         {
-            Error(e.Message);
-            Error(e.StackTrace);
+            // ToString includes type, message, inner exceptions and stack trace
+            Error(e.ToString());
+            if (e is ReflectionTypeLoadException typeLoadException)
+            {
+                foreach (var loaderException in typeLoadException.LoaderExceptions)
+                {
+                    if (loaderException != null)
+                    {
+                        Error($"LoaderException: {loaderException}");
+                    }
+                }
+            }
         }
     }
 

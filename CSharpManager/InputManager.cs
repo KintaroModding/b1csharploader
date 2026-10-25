@@ -55,6 +55,7 @@ namespace CSharpManager
                         continue;
                     }
                     item.IsPressed = true;
+                    item.LastTriggerMs = now;
                     if (item.RunOnGameThread)
                     {
                         Utils.TryRunOnGameThread(item.Action);
