@@ -7,6 +7,7 @@ namespace CSharpManager
         {
             CSharpModManager manager = new();
             manager.LoadMods();
+            manager.ShowStartBanner();
             manager.StartLoop();
         }
     }

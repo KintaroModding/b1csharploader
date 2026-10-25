@@ -19,7 +19,7 @@ if (-not $msbuild) {
     throw "MSBuild with the C++ tools not found. Install the 'Desktop development with C++' workload."
 }
 
-& $msbuild (Join-Path $root "CSharpLoader.sln") -restore -p:Configuration=Release -p:Platform=x64 -v:minimal -nologo
+& $msbuild (Join-Path $root "CSharpLoader.sln") -restore -p:Configuration=Release -p:Platform=x64 "-p:InformationalVersion=$Version" -v:minimal -nologo
 if ($LASTEXITCODE -ne 0) {
     throw "Build failed."
 }

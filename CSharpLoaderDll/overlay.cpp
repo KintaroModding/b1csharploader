@@ -12,21 +12,33 @@ namespace {
     constexpr BYTE WindowAlpha = 215;
     constexpr UINT_PTR TimerId = 1;
     constexpr UINT TimerMs = 50;
+    constexpr ULONGLONG BannerMs = 5000;
+    constexpr ULONGLONG BannerFadeMs = 600;
+    constexpr COLORREF AccentColor = RGB(120, 160, 220);
     const wchar_t ClassName[] = L"CSharpLoaderOverlay";
     const wchar_t Header[] = L"C# Loader console  (F10 to close)";
 
-    std::mutex linesMutex;
-    std::deque<std::wstring> lines;
-    bool linesChanged = false;  // guarded by linesMutex
+    std::mutex stateMutex;
+    std::deque<std::wstring> lines;   // guarded by stateMutex
+    bool linesChanged = false;        // guarded by stateMutex
+    std::wstring bannerText;          // guarded by stateMutex
+    bool bannerPending = false;       // guarded by stateMutex
 
     // only used on the overlay thread
-    HWND overlayHwnd = nullptr;
+    HWND consoleHwnd = nullptr;
+    HWND bannerHwnd = nullptr;
     HWND gameHwnd = nullptr;
-    bool visible = false;
+    bool consoleOpen = false;
     bool keyWasDown = false;
     HFONT font = nullptr;
+    HFONT titleFont = nullptr;
+    HFONT textFont = nullptr;
     int fontHeight = 0;
-    RECT overlayRect{};
+    RECT consoleRect{};
+    RECT bannerRect{};
+    std::vector<std::wstring> bannerLines;
+    ULONGLONG bannerUntil = 0;
+    BYTE bannerAlpha = WindowAlpha;
 
     BOOL CALLBACK find_game_window_proc(HWND hwnd, LPARAM lParam) {
         DWORD processId = 0;
@@ -59,17 +71,97 @@ namespace {
         return RGB(230, 230, 230);
     }
 
-    void update_font(int clientHeight) {
-        int height = (std::max)(14, clientHeight / 54);
+    std::vector<std::wstring> split_lines(const std::wstring& text) {
+        std::vector<std::wstring> result;
+        size_t start = 0;
+        for (size_t end = text.find(L'\n'); end != std::wstring::npos; end = text.find(L'\n', start)) {
+            result.push_back(text.substr(start, end - start));
+            start = end + 1;
+        }
+        result.push_back(text.substr(start));
+        return result;
+    }
+
+    HFONT create_font(int height, int weight, DWORD pitchAndFamily, const wchar_t* face) {
+        return CreateFontW(-height, 0, 0, 0, weight, FALSE, FALSE, FALSE, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS,
+            CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY, pitchAndFamily, face);
+    }
+
+    // the text size follows the game's height
+    void update_fonts(int clientHeight) {
+        const int height = (std::max)(14, clientHeight / 54);
         if (font != nullptr && height == fontHeight) {
             return;
         }
-        if (font != nullptr) {
-            DeleteObject(font);
+        for (HFONT old : { font, titleFont, textFont }) {
+            if (old != nullptr) {
+                DeleteObject(old);
+            }
         }
         fontHeight = height;
-        font = CreateFontW(-height, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS,
-            CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY, FIXED_PITCH | FF_MODERN, L"Consolas");
+        font = create_font(height, FW_NORMAL, FIXED_PITCH | FF_MODERN, L"Consolas");
+        titleFont = create_font(height * 7 / 5, FW_SEMIBOLD, VARIABLE_PITCH | FF_SWISS, L"Segoe UI");
+        textFont = create_font(height, FW_NORMAL, VARIABLE_PITCH | FF_SWISS, L"Segoe UI");
+    }
+
+    int banner_bar_width() {
+        return (std::max)(3, fontHeight / 5);
+    }
+
+    // measures the banner, and draws it when draw is true
+    SIZE banner_layout(HDC dc, bool draw) {
+        const int padding = fontHeight;
+        const int x = banner_bar_width() + padding;
+        int y = padding * 3 / 4;
+        int width = 0;
+        for (size_t i = 0; i < bannerLines.size(); i++) {
+            const std::wstring& line = bannerLines[i];
+            SelectObject(dc, i == 0 ? titleFont : textFont);
+            SIZE extent{};
+            GetTextExtentPoint32W(dc, line.c_str(), static_cast<int>(line.size()), &extent);
+            if (draw) {
+                SetTextColor(dc, i == 0 ? RGB(240, 240, 240) : RGB(175, 175, 175));
+                TextOutW(dc, x, y, line.c_str(), static_cast<int>(line.size()));
+            }
+            width = (std::max)(width, static_cast<int>(extent.cx));
+            y += extent.cy;
+        }
+        return SIZE{ x + width + padding, y + padding * 3 / 4 };
+    }
+
+    void draw_banner(HDC dc, const RECT& rc) {
+        RECT bar{ 0, 0, banner_bar_width(), rc.bottom };
+        HBRUSH accent = CreateSolidBrush(AccentColor);
+        FillRect(dc, &bar, accent);
+        DeleteObject(accent);
+        banner_layout(dc, true);
+    }
+
+    void draw_console(HDC dc, const RECT& rc) {
+        SelectObject(dc, font);
+        TEXTMETRICW tm;
+        GetTextMetricsW(dc, &tm);
+        const int lineHeight = (std::max)(1, static_cast<int>(tm.tmHeight));
+        const int padding = lineHeight / 2;
+        int y = padding;
+
+        SetTextColor(dc, AccentColor);
+        TextOutW(dc, padding, y, Header, static_cast<int>(wcslen(Header)));
+        y += lineHeight + padding;
+
+        const int maxLines = (std::max)(0, (static_cast<int>(rc.bottom) - y - padding) / lineHeight);
+        std::vector<std::wstring> visibleLines;
+        {
+            std::lock_guard<std::mutex> lock(stateMutex);
+            const size_t count = (std::min)(lines.size(), static_cast<size_t>(maxLines));
+            visibleLines.assign(lines.end() - count, lines.end());
+        }
+        for (const auto& line : visibleLines) {
+            SetTextColor(dc, line_color(line));
+            RECT lineRect{ padding, y, rc.right - padding, y + lineHeight };
+            ExtTextOutW(dc, padding, y, ETO_CLIPPED, &lineRect, line.c_str(), static_cast<UINT>(line.size()), nullptr);
+            y += lineHeight;
+        }
     }
 
     void paint(HWND hwnd) {
@@ -77,42 +169,21 @@ namespace {
         HDC hdc = BeginPaint(hwnd, &ps);
         RECT rc;
         GetClientRect(hwnd, &rc);
-        const int width = rc.right;
-        const int height = rc.bottom;
 
         // draw into a memory bitmap first, so the text does not flicker
         HDC mem = CreateCompatibleDC(hdc);
-        HBITMAP bitmap = CreateCompatibleBitmap(hdc, width, height);
+        HBITMAP bitmap = CreateCompatibleBitmap(hdc, rc.right, rc.bottom);
         HGDIOBJ oldBitmap = SelectObject(mem, bitmap);
-        HGDIOBJ oldFont = SelectObject(mem, font);
+        HGDIOBJ oldFont = GetCurrentObject(mem, OBJ_FONT);
         FillRect(mem, &rc, static_cast<HBRUSH>(GetStockObject(BLACK_BRUSH)));
         SetBkMode(mem, TRANSPARENT);
-
-        TEXTMETRICW tm;
-        GetTextMetricsW(mem, &tm);
-        const int lineHeight = (std::max)(1, static_cast<int>(tm.tmHeight));
-        const int padding = lineHeight / 2;
-        int y = padding;
-
-        SetTextColor(mem, RGB(120, 160, 220));
-        TextOutW(mem, padding, y, Header, static_cast<int>(wcslen(Header)));
-        y += lineHeight + padding;
-
-        const int maxLines = (std::max)(0, (height - y - padding) / lineHeight);
-        std::vector<std::wstring> visibleLines;
-        {
-            std::lock_guard<std::mutex> lock(linesMutex);
-            const size_t count = (std::min)(lines.size(), static_cast<size_t>(maxLines));
-            visibleLines.assign(lines.end() - count, lines.end());
-        }
-        for (const auto& line : visibleLines) {
-            SetTextColor(mem, line_color(line));
-            RECT lineRect{ padding, y, width - padding, y + lineHeight };
-            ExtTextOutW(mem, padding, y, ETO_CLIPPED, &lineRect, line.c_str(), static_cast<UINT>(line.size()), nullptr);
-            y += lineHeight;
+        if (hwnd == bannerHwnd) {
+            draw_banner(mem, rc);
+        } else {
+            draw_console(mem, rc);
         }
 
-        BitBlt(hdc, 0, 0, width, height, mem, 0, 0, SRCCOPY);
+        BitBlt(hdc, 0, 0, rc.right, rc.bottom, mem, 0, 0, SRCCOPY);
         SelectObject(mem, oldFont);
         SelectObject(mem, oldBitmap);
         DeleteObject(bitmap);
@@ -120,9 +191,85 @@ namespace {
         EndPaint(hwnd, &ps);
     }
 
-    void hide() {
-        if (IsWindowVisible(overlayHwnd)) {
-            ShowWindow(overlayHwnd, SW_HIDE);
+    void hide(HWND hwnd) {
+        if (IsWindowVisible(hwnd)) {
+            ShowWindow(hwnd, SW_HIDE);
+        }
+    }
+
+    // moves the window to target and shows it, returns true when it needs a redraw
+    bool place(HWND hwnd, const RECT& target, RECT& current) {
+        bool redraw = false;
+        if (!EqualRect(&target, &current)) {
+            current = target;
+            SetWindowPos(hwnd, HWND_TOPMOST, target.left, target.top,
+                target.right - target.left, target.bottom - target.top, SWP_NOACTIVATE);
+            redraw = true;
+        }
+        if (!IsWindowVisible(hwnd)) {
+            SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_SHOWWINDOW);
+            redraw = true;
+        }
+        return redraw;
+    }
+
+    // area: the game's client area on the screen, nullptr when nothing may show
+    void update_console(const RECT* area) {
+        if (!consoleOpen || area == nullptr) {
+            hide(consoleHwnd);
+            return;
+        }
+        // the top 40% of the game
+        RECT target{ area->left, area->top, area->right, area->top + (area->bottom - area->top) * 2 / 5 };
+        bool redraw = place(consoleHwnd, target, consoleRect);
+        {
+            std::lock_guard<std::mutex> lock(stateMutex);
+            redraw = redraw || linesChanged;
+            linesChanged = false;
+        }
+        if (redraw) {
+            InvalidateRect(consoleHwnd, nullptr, FALSE);
+        }
+    }
+
+    void update_banner(const RECT* area) {
+        const ULONGLONG now = GetTickCount64();
+        if (area != nullptr) {
+            std::lock_guard<std::mutex> lock(stateMutex);
+            if (bannerPending) {
+                // the 5 seconds start when the banner can show
+                bannerPending = false;
+                bannerLines = split_lines(bannerText);
+                bannerUntil = now + BannerMs;
+                bannerRect = {};
+            }
+        }
+        if (area == nullptr || consoleOpen || now >= bannerUntil) {
+            hide(bannerHwnd);
+            return;
+        }
+
+        HDC dc = GetDC(bannerHwnd);
+        HGDIOBJ oldFont = GetCurrentObject(dc, OBJ_FONT);
+        const SIZE size = banner_layout(dc, false);
+        SelectObject(dc, oldFont);
+        ReleaseDC(bannerHwnd, dc);
+
+        // top center of the game
+        const int x = area->left + (area->right - area->left - size.cx) / 2;
+        const int y = area->top + (area->bottom - area->top) / 16;
+        RECT target{ x, y, x + size.cx, y + size.cy };
+        const bool redraw = place(bannerHwnd, target, bannerRect);
+
+        // fade out at the end
+        const ULONGLONG remaining = bannerUntil - now;
+        const BYTE alpha = remaining < BannerFadeMs ? static_cast<BYTE>(WindowAlpha * remaining / BannerFadeMs) : WindowAlpha;
+        if (alpha != bannerAlpha) {
+            bannerAlpha = alpha;
+            SetLayeredWindowAttributes(bannerHwnd, 0, alpha, LWA_ALPHA);
+        }
+        if (redraw) {
+            InvalidateRect(bannerHwnd, nullptr, FALSE);
         }
     }
 
@@ -131,49 +278,26 @@ namespace {
         if (gameHwnd == nullptr || !IsWindow(gameHwnd)) {
             gameHwnd = find_game_window();
         }
-        const bool focused = gameHwnd != nullptr && GetForegroundWindow() == gameHwnd;
+        const bool focused = gameHwnd != nullptr && GetForegroundWindow() == gameHwnd && !IsIconic(gameHwnd);
         const bool keyDown = (GetAsyncKeyState(ToggleKey) & 0x8000) != 0;
         if (keyDown && !keyWasDown && focused) {
-            visible = !visible;
+            consoleOpen = !consoleOpen;
         }
         keyWasDown = keyDown;
 
-        if (!visible || !focused || IsIconic(gameHwnd)) {
-            hide();
-            return;
+        RECT area{};
+        bool hasArea = false;
+        if (focused) {
+            RECT client;
+            POINT origin{ 0, 0 };
+            if (GetClientRect(gameHwnd, &client) && ClientToScreen(gameHwnd, &origin) && client.right > 0 && client.bottom > 0) {
+                area = { origin.x, origin.y, origin.x + client.right, origin.y + client.bottom };
+                hasArea = true;
+                update_fonts(client.bottom);
+            }
         }
-
-        // cover the top 40% of the game's client area
-        RECT client;
-        GetClientRect(gameHwnd, &client);
-        POINT origin{ 0, 0 };
-        ClientToScreen(gameHwnd, &origin);
-        RECT target{ origin.x, origin.y, origin.x + client.right, origin.y + client.bottom * 2 / 5 };
-        if (target.right <= target.left || target.bottom <= target.top) {
-            hide();
-            return;
-        }
-
-        bool redraw = false;
-        if (!EqualRect(&target, &overlayRect)) {
-            overlayRect = target;
-            update_font(client.bottom);
-            SetWindowPos(overlayHwnd, HWND_TOPMOST, target.left, target.top,
-                target.right - target.left, target.bottom - target.top, SWP_NOACTIVATE);
-            redraw = true;
-        }
-        {
-            std::lock_guard<std::mutex> lock(linesMutex);
-            redraw = redraw || linesChanged;
-            linesChanged = false;
-        }
-        if (!IsWindowVisible(overlayHwnd)) {
-            SetWindowPos(overlayHwnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_SHOWWINDOW);
-            redraw = true;
-        }
-        if (redraw) {
-            InvalidateRect(overlayHwnd, nullptr, FALSE);
-        }
+        update_console(hasArea ? &area : nullptr);
+        update_banner(hasArea ? &area : nullptr);
     }
 
     LRESULT CALLBACK window_proc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
@@ -190,6 +314,16 @@ namespace {
         return DefWindowProcW(hwnd, msg, wParam, lParam);
     }
 
+    HWND create_overlay_window(HINSTANCE instance) {
+        // click-through, never takes the focus, not in the taskbar
+        HWND hwnd = CreateWindowExW(WS_EX_TOPMOST | WS_EX_TRANSPARENT | WS_EX_LAYERED | WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW,
+            ClassName, ClassName, WS_POPUP, 0, 0, 1, 1, nullptr, nullptr, instance, nullptr);
+        if (hwnd != nullptr) {
+            SetLayeredWindowAttributes(hwnd, 0, WindowAlpha, LWA_ALPHA);
+        }
+        return hwnd;
+    }
+
     DWORD WINAPI overlay_thread(LPVOID module) {
         WNDCLASSEXW wc{};
         wc.cbSize = sizeof(wc);
@@ -199,14 +333,12 @@ namespace {
         if (RegisterClassExW(&wc) == 0) {
             return EXIT_FAILURE;
         }
-        // click-through, never takes the focus, not in the taskbar
-        overlayHwnd = CreateWindowExW(WS_EX_TOPMOST | WS_EX_TRANSPARENT | WS_EX_LAYERED | WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW,
-            ClassName, ClassName, WS_POPUP, 0, 0, 1, 1, nullptr, nullptr, wc.hInstance, nullptr);
-        if (overlayHwnd == nullptr) {
+        consoleHwnd = create_overlay_window(wc.hInstance);
+        bannerHwnd = create_overlay_window(wc.hInstance);
+        if (consoleHwnd == nullptr || bannerHwnd == nullptr) {
             return EXIT_FAILURE;
         }
-        SetLayeredWindowAttributes(overlayHwnd, 0, WindowAlpha, LWA_ALPHA);
-        SetTimer(overlayHwnd, TimerId, TimerMs, nullptr);
+        SetTimer(consoleHwnd, TimerId, TimerMs, nullptr);
 
         MSG msg;
         while (GetMessageW(&msg, nullptr, 0, 0) > 0) {
@@ -230,7 +362,7 @@ void overlay_add_line(const wchar_t* line) {
     for (size_t pos = text.find(L'\t'); pos != std::wstring::npos; pos = text.find(L'\t', pos)) {
         text.replace(pos, 1, L"    ");
     }
-    std::lock_guard<std::mutex> lock(linesMutex);
+    std::lock_guard<std::mutex> lock(stateMutex);
     lines.push_back(std::move(text));
     if (lines.size() > MaxLines) {
         lines.pop_front();
@@ -238,8 +370,20 @@ void overlay_add_line(const wchar_t* line) {
     linesChanged = true;
 }
 
+void overlay_show_banner(const wchar_t* text) {
+    std::lock_guard<std::mutex> lock(stateMutex);
+    bannerText = text;
+    bannerPending = true;
+}
+
 extern "C" __declspec(dllexport) void CSharpLoader_LogLine(const wchar_t* line) {
     if (line != nullptr) {
         overlay_add_line(line);
+    }
+}
+
+extern "C" __declspec(dllexport) void CSharpLoader_ShowBanner(const wchar_t* text) {
+    if (text != nullptr) {
+        overlay_show_banner(text);
     }
 }

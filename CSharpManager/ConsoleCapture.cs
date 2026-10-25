@@ -1,6 +1,5 @@
 using System;
 using System.IO;
-using System.Runtime.InteropServices;
 using System.Text;
 
 namespace CSharpManager
@@ -11,10 +10,6 @@ namespace CSharpManager
     /// </summary>
     internal sealed class ConsoleCapture : TextWriter
     {
-        [UnmanagedFunctionPointer(CallingConvention.Cdecl, CharSet = CharSet.Unicode)]
-        private delegate void LogLineFn(string line);
-
-        private static LogLineFn? logLine;
         private readonly TextWriter inner;
         private readonly StringBuilder pending = new();
 
@@ -27,32 +22,12 @@ namespace CSharpManager
 
         public static void Install()
         {
-            logLine = FindLogLine();
-            if (logLine == null)
+            if (NativeLoader.LogLine == null)
             {
                 return;
             }
             Console.SetOut(Synchronized(new ConsoleCapture(Console.Out)));
             Console.SetError(Synchronized(new ConsoleCapture(Console.Error)));
-        }
-
-        private static LogLineFn? FindLogLine()
-        {
-            // the native loader is loaded from the game folder as version.dll or hid.dll
-            foreach (string name in new[] { "version.dll", "hid.dll" })
-            {
-                IntPtr module = GetModuleHandleW(Path.GetFullPath(name));
-                if (module == IntPtr.Zero)
-                {
-                    continue;
-                }
-                IntPtr function = GetProcAddress(module, "CSharpLoader_LogLine");
-                if (function != IntPtr.Zero)
-                {
-                    return (LogLineFn)Marshal.GetDelegateForFunctionPointer(function, typeof(LogLineFn));
-                }
-            }
-            return null;
         }
 
         public override void Write(char value)
@@ -92,7 +67,7 @@ namespace CSharpManager
         {
             if (c == '\n')
             {
-                logLine?.Invoke(pending.ToString());
+                NativeLoader.LogLine?.Invoke(pending.ToString());
                 pending.Clear();
             }
             else if (c != '\r')
@@ -100,11 +75,5 @@ namespace CSharpManager
                 pending.Append(c);
             }
         }
-
-        [DllImport("kernel32.dll", CharSet = CharSet.Unicode)]
-        private static extern IntPtr GetModuleHandleW(string moduleName);
-
-        [DllImport("kernel32.dll", CharSet = CharSet.Ansi, BestFitMapping = false)]
-        private static extern IntPtr GetProcAddress(IntPtr module, string procName);
     }
 }

@@ -162,6 +162,14 @@ namespace CSharpManager
             LoadMods();
         }
 
+        public void ShowStartBanner()
+        {
+            string version = typeof(CSharpModManager).Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion ?? "";
+            int count = LoadedMods.Count;
+            string mods = count == 0 ? "No mods loaded" : count == 1 ? "1 mod loaded" : $"{count} mods loaded";
+            NativeLoader.ShowBanner?.Invoke($"C# Loader {version} is running\n{mods}  ·  F10 opens the console");
+        }
+
         public void StartLoop()
         {
             InputManager.RegisterBuiltinKeyBind(ModifierKeys.Control, Key.F5, ReloadMods);
