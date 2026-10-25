@@ -45,10 +45,31 @@ namespace CSharpManager
         {
             var now = DateTime.Now.Ticks / 10000;
             var modifiers = KeyUtils.Modifiers;
+            var buttons = CurrentGamePadButton;
+
+            // the biggest held gamepad combo wins, combos inside it are blocked
+            int maxButtonCount = 0;
             foreach (var item in items)
             {
-                if (item.Modifiers == modifiers && KeyUtils.IsKeyDown(item.Key) ||
-                    CurrentGamePadButton != GamePadButton.None && item.GamePadButton != GamePadButton.None && CurrentGamePadButton.HasFlag(item.GamePadButton))
+                if (IsGamePadMatch(item, buttons))
+                {
+                    maxButtonCount = Math.Max(maxButtonCount, CountBits((uint)item.GamePadButton));
+                }
+            }
+
+            foreach (var item in items)
+            {
+                // Key.None with modifiers binds the modifier keys alone
+                bool keyMatch = item.Modifiers == modifiers &&
+                    (item.Key == Key.None ? modifiers != ModifierKeys.None : KeyUtils.IsKeyDown(item.Key));
+                bool gamePadMatch = IsGamePadMatch(item, buttons);
+                if (!keyMatch && gamePadMatch && CountBits((uint)item.GamePadButton) < maxButtonCount)
+                {
+                    // part of a bigger held combo, keep it blocked until it is released
+                    item.IsPressed = true;
+                    item.LastTriggerMs = now;
+                }
+                else if (keyMatch || gamePadMatch)
                 {
                     if (item.IsPressed && (item.RepeatMs == 0 || item.LastTriggerMs > 0 && now - item.LastTriggerMs < item.RepeatMs))
                     {
@@ -70,6 +91,22 @@ namespace CSharpManager
                     item.IsPressed = false;
                 }
             }
+        }
+
+        private static bool IsGamePadMatch(HotKeyItem item, GamePadButton buttons)
+        {
+            return item.GamePadButton != GamePadButton.None && (buttons & item.GamePadButton) == item.GamePadButton;
+        }
+
+        private static int CountBits(uint value)
+        {
+            int count = 0;
+            while (value != 0)
+            {
+                value &= value - 1;
+                count++;
+            }
+            return count;
         }
 
         public void Update()
