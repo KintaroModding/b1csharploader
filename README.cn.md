@@ -113,17 +113,19 @@ public class MyMod : ICSharpMod
 
     public void Init()
     {
-        Console.WriteLine("Init");
+        Log.Info("Init");
     }
 
     public void DeInit()
     {
-        Console.WriteLine("DeInit");
+        Log.Info("DeInit");
     }
 }
 ```
 
 管理器会为每个实现了 `ICSharpMod` 的类创建实例，并调用 `Init()`。
+
+控制台输出请使用 `Log.Info()`、`Log.Warn()`、`Log.Error()` 和 `Log.Debug()`。它们会在每行加上时间和级别，与加载器自己的输出一致。
 
 按 Ctrl+F5 重新加载 mod 时，管理器会调用每个已加载 mod 的 `DeInit()`，再重新加载所有 mod。开发模式下，每次重新加载都会把 mod 的 dll 加载成新的 Assembly，旧的 Assembly 仍会保留在进程中。所以请在 `DeInit()` 中结束 mod 的后台线程，并移除事件监听。mod 不需要自己清理按键监听，管理器会处理。
 

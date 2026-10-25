@@ -113,17 +113,19 @@ public class MyMod : ICSharpMod
 
     public void Init()
     {
-        Console.WriteLine("Init");
+        Log.Info("Init");
     }
 
     public void DeInit()
     {
-        Console.WriteLine("DeInit");
+        Log.Info("DeInit");
     }
 }
 ```
 
 The manager creates an instance of each class that implements `ICSharpMod` and calls `Init()`.
+
+For console output, use `Log.Info()`, `Log.Warn()`, `Log.Error()` and `Log.Debug()`. They add the time and the level to each line, like the loader's own output.
 
 When you press Ctrl+F5 to reload the mods, the manager calls `DeInit()` of each loaded mod, then loads all mods again. In Develop mode, each reload loads the mod dll as a new assembly, and the old assembly stays in memory. So stop your background threads and remove your event handlers in `DeInit()`. You do not need to remove your key binds: the manager does that.
 

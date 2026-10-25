@@ -1,5 +1,4 @@
-﻿using System;
-using b1;
+﻿using b1;
 using BtlShare;
 using CSharpModBase;
 using CSharpModBase.Input;
@@ -21,8 +20,8 @@ namespace CSharpExample
 
         public void Init()
         {
-            Console.WriteLine($"{Name} Init");
-            Utils.RegisterKeyBind(Key.ENTER, () => Console.WriteLine("Enter pressed"));
+            Log.Info($"{Name} Init");
+            Utils.RegisterKeyBind(Key.ENTER, () => Log.Info("Enter pressed"));
             Utils.RegisterKeyBind(ModifierKeys.Control, Key.ENTER, FindPlayer);
 
             // hook
@@ -31,24 +30,24 @@ namespace CSharpExample
 
         public void DeInit()
         {
-            Console.WriteLine($"{Name} DeInit");
+            Log.Info($"{Name} DeInit");
             // harmony.UnpatchAll();
         }
 
         private void FindPlayer()
         {
-            Console.WriteLine("Ctrl+Enter pressed");
+            Log.Info("Ctrl+Enter pressed");
             var player = MyUtils.GetControlledPawn();
             if (player == null)
             {
-                Console.WriteLine("Player not found");
+                Log.Info("Player not found");
             }
             else
             {
-                Console.WriteLine($"Player found: {player}");
+                Log.Info($"Player found: {player}");
                 float hp = BGUFunctionLibraryCS.GetAttrValue(player, EBGUAttrFloat.Hp);
                 float hpMax = BGUFunctionLibraryCS.GetAttrValue(player, EBGUAttrFloat.HpMax);
-                Console.WriteLine($"HP: {hp}/{hpMax}");
+                Log.Info($"HP: {hp}/{hpMax}");
             }
         }
     }
