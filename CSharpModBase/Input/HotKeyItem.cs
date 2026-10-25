@@ -43,7 +43,8 @@ namespace CSharpModBase.Input
         {
             if ((code >> 24) == 0xF0)
             {
-                GamePadButton = (GamePadButton)(code & 0xFFFF);
+                // keep bits 16-23, LeftTrigger and RightTrigger live there
+                GamePadButton = (GamePadButton)(code & 0xFFFFFF);
                 Modifiers = ModifierKeys.None;
                 Key = Key.None;
             }
@@ -86,9 +87,9 @@ namespace CSharpModBase.Input
         public bool IsPressed { get; set; }
         public bool RunOnGameThread { get; set; } = true;
 
-        public HotKeyItem WithKey(ModifierKeys Modifiers, Key Key)
+        public HotKeyItem WithKey(ModifierKeys modifiers, Key key)
         {
-            return new(Label, Modifiers, Key, Action);
+            return new(Label, modifiers, key, Action);
         }
 
         public HotKeyItem(ModifierKeys modifiers, Key key, Action action) : this("", modifiers, key, action)
