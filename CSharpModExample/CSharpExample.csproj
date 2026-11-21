@@ -16,9 +16,9 @@
   </ItemGroup> -->
 
   <ItemGroup>
+    <!-- the loader has CSharpModBase.dll, a copy in the mod folder is not needed -->
     <ProjectReference Include="..\CSharpModBase\CSharpModBase.csproj">
-      <!-- <Private>False</Private> -->
-      <!-- <ExcludeAssets>runtime</ExcludeAssets> -->
+      <Private>False</Private>
     </ProjectReference>
   </ItemGroup>
 

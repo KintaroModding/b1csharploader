@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading;
@@ -10,11 +11,20 @@ namespace CSharpManager
 {
     public class InputManager : IInputManager
     {
+        private static readonly Stopwatch Clock = Stopwatch.StartNew();
+        private static readonly Func<Key, bool> IsKeyDown = KeyUtils.IsKeyDown;
+
+        // the binds that the current thread registers while a mod's Init runs, see StartRecording
+        [ThreadStatic]
+        private static List<HotKeyItem>? recordedItems;
+
         public List<HotKeyItem> BuiltinHotKeyItems { get; } = new();
         public List<HotKeyItem> HotKeyItems { get; } = new();
         public bool EnableGamePad { get; set; } = true;
         public static GamePadButton CurrentGamePadButton { get; set; }
-        // public static GamePadButtonEventHandler? GamePadButtonDown { get; set; }
+
+        /// <summary>Runs the action of a hotkey that fires, tests replace it.</summary>
+        internal Action<HotKeyItem> Run { get; set; } = RunAction;
 
         private IntPtr HWnd;
 
@@ -36,72 +46,16 @@ namespace CSharpManager
             }), IntPtr.Zero);
         }
 
-        private void HandleKeys(List<HotKeyItem> items)
+        private static void RunAction(HotKeyItem item)
         {
-            var now = DateTime.Now.Ticks / 10000;
-            var modifiers = KeyUtils.Modifiers;
-            var buttons = CurrentGamePadButton;
-
-            // the biggest held gamepad combo wins, combos inside it are blocked
-            int maxButtonCount = 0;
-            foreach (var item in items)
+            if (item.RunOnGameThread)
             {
-                if (IsGamePadMatch(item, buttons))
-                {
-                    maxButtonCount = Math.Max(maxButtonCount, CountBits((uint)item.GamePadButton));
-                }
+                Utils.TryRunOnGameThread(item.Action);
             }
-
-            foreach (var item in items)
+            else
             {
-                // Key.None with modifiers binds the modifier keys alone
-                bool keyMatch = item.Modifiers == modifiers &&
-                    (item.Key == Key.None ? modifiers != ModifierKeys.None : KeyUtils.IsKeyDown(item.Key));
-                bool gamePadMatch = IsGamePadMatch(item, buttons);
-                if (!keyMatch && gamePadMatch && CountBits((uint)item.GamePadButton) < maxButtonCount)
-                {
-                    // part of a bigger held combo, keep it blocked until it is released
-                    item.IsPressed = true;
-                    item.LastTriggerMs = now;
-                }
-                else if (keyMatch || gamePadMatch)
-                {
-                    if (item.IsPressed && (item.RepeatMs == 0 || item.LastTriggerMs > 0 && now - item.LastTriggerMs < item.RepeatMs))
-                    {
-                        continue;
-                    }
-                    item.IsPressed = true;
-                    item.LastTriggerMs = now;
-                    if (item.RunOnGameThread)
-                    {
-                        Utils.TryRunOnGameThread(item.Action);
-                    }
-                    else
-                    {
-                        Utils.TryRun(item.Action);
-                    }
-                }
-                else if (item.IsPressed)
-                {
-                    item.IsPressed = false;
-                }
+                Utils.TryRun(item.Action);
             }
-        }
-
-        private static bool IsGamePadMatch(HotKeyItem item, GamePadButton buttons)
-        {
-            return item.GamePadButton != GamePadButton.None && (buttons & item.GamePadButton) == item.GamePadButton;
-        }
-
-        private static int CountBits(uint value)
-        {
-            int count = 0;
-            while (value != 0)
-            {
-                value &= value - 1;
-                count++;
-            }
-            return count;
         }
 
         public void Update()
@@ -110,16 +64,26 @@ namespace CSharpManager
             if (EnableGamePad)
             {
                 GamePadUtils.GetGamePadButtons(out var buttons);
-                // if (buttons != GamePadButton.None)
-                // {
-                //     GamePadButtonDown?.Invoke(new GamePadButtonEvent { Button = buttons });
-                // }
                 CurrentGamePadButton = buttons;
             }
-            HandleKeys(BuiltinHotKeyItems);
-            lock (HotKeyItems)
+            Dispatch(new InputState(KeyUtils.Modifiers, CurrentGamePadButton, Clock.ElapsedMilliseconds, IsKeyDown));
+        }
+
+        /// <summary>
+        /// Runs the hotkeys for one input poll. It loops over copies of the lists,
+        /// so an action can add and remove binds, or reload the mods.
+        /// </summary>
+        internal void Dispatch(InputState state)
+        {
+            HotKeyDispatcher.Handle(Snapshot(BuiltinHotKeyItems), state, Run);
+            HotKeyDispatcher.Handle(Snapshot(HotKeyItems), state, Run);
+        }
+
+        private static HotKeyItem[] Snapshot(List<HotKeyItem> items)
+        {
+            lock (items)
             {
-                HandleKeys(HotKeyItems);
+                return items.ToArray();
             }
         }
 
@@ -128,6 +92,30 @@ namespace CSharpManager
             lock (HotKeyItems)
             {
                 HotKeyItems.Clear();
+            }
+        }
+
+        /// <summary>
+        /// Starts to collect the binds that this thread registers, until <see cref="StopRecording"/>.
+        /// The manager uses it to remove the binds of a mod whose Init failed.
+        /// </summary>
+        internal List<HotKeyItem> StartRecording()
+        {
+            recordedItems = new();
+            return recordedItems;
+        }
+
+        internal void StopRecording()
+        {
+            recordedItems = null;
+        }
+
+        internal void RemoveKeyBinds(ICollection<HotKeyItem> items)
+        {
+            if (items.Count == 0) return;
+            lock (HotKeyItems)
+            {
+                HotKeyItems.RemoveAll(items.Contains);
             }
         }
 
@@ -163,15 +151,16 @@ namespace CSharpManager
 
         public HotKeyItem RegisterBuiltinKeyBind(Key key, Action action)
         {
-            var item = new HotKeyItem(ModifierKeys.None, key, action);
-            BuiltinHotKeyItems.Add(item);
-            return item;
+            return RegisterBuiltinKeyBind(ModifierKeys.None, key, action);
         }
 
         public HotKeyItem RegisterBuiltinKeyBind(ModifierKeys modifiers, Key key, Action action)
         {
             var item = new HotKeyItem(modifiers, key, action);
-            BuiltinHotKeyItems.Add(item);
+            lock (BuiltinHotKeyItems)
+            {
+                BuiltinHotKeyItems.Add(item);
+            }
             return item;
         }
 
@@ -181,6 +170,7 @@ namespace CSharpManager
             {
                 HotKeyItems.Add(item);
             }
+            recordedItems?.Add(item);
         }
 
         public HotKeyItem RegisterKeyBind(Key key, Action action)

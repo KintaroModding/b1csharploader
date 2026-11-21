@@ -3,12 +3,15 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Reflection;
+using System.Runtime.CompilerServices;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using CSharpModBase;
 using CSharpModBase.Input;
+using HarmonyLib;
 using Mono.Cecil;
+using Mono.Cecil.Cil;
 
 namespace CSharpManager
 {
@@ -18,7 +21,12 @@ namespace CSharpManager
         private const string TestedGameBuild = "23831";
         private static readonly string Separator = "  " + (char)0xB7 + "  ";
 
-        static string? LoadingModName { get; set; }
+        // the mod folder whose dll this thread loads right now
+        [ThreadStatic]
+        private static string? loadingModName;
+
+        // the mod folder of each assembly that came from a mod folder, to find its dependencies later
+        private static readonly Dictionary<Assembly, string> ModOfAssembly = new();
 
         public List<ICSharpMod> LoadedMods { get; } = new();
         /// <summary>Folder names of the mods that failed to load.</summary>
@@ -39,11 +47,51 @@ namespace CSharpManager
             TaskScheduler.UnobservedTaskException += OnUnobservedTaskException;
         }
 
-        private static Assembly? TryLoadDll(string path)
+        private static Assembly? TryLoadDll(string path, string? modName)
         {
-            if (File.Exists(path))
+            if (!File.Exists(path))
             {
-                return Assembly.LoadFrom(path);
+                return null;
+            }
+            Assembly assembly = Assembly.LoadFrom(path);
+            if (modName != null)
+            {
+                RememberMod(assembly, modName);
+            }
+            return assembly;
+        }
+
+        private static void RememberMod(Assembly assembly, string modName)
+        {
+            lock (ModOfAssembly)
+            {
+                ModOfAssembly[assembly] = modName;
+            }
+        }
+
+        private static string? ModNameOf(Assembly? assembly)
+        {
+            if (assembly == null) return null;
+            lock (ModOfAssembly)
+            {
+                return ModOfAssembly.TryGetValue(assembly, out string? modName) ? modName : null;
+            }
+        }
+
+        /// <summary>
+        /// Returns an assembly that is loaded already and is not older than the requested one.
+        /// So all mods use the same CSharpModBase and 0Harmony, even when a mod folder has its own copy.
+        /// </summary>
+        internal static Assembly? FindLoadedAssembly(AssemblyName name)
+        {
+            foreach (Assembly loaded in AppDomain.CurrentDomain.GetAssemblies())
+            {
+                AssemblyName loadedName = loaded.GetName();
+                if (string.Equals(loadedName.Name, name.Name, StringComparison.OrdinalIgnoreCase) &&
+                    (name.Version == null || (loadedName.Version != null && loadedName.Version >= name.Version)))
+                {
+                    return loaded;
+                }
             }
             return null;
         }
@@ -52,14 +100,38 @@ namespace CSharpManager
         {
             try
             {
-                if (LoadingModName == null)
+                AssemblyName name = new(args.Name);
+                Assembly? loaded = FindLoadedAssembly(name);
+                if (loaded != null)
                 {
-                    return null;
+                    return loaded;
                 }
-                string dllName = $"{new AssemblyName(args.Name).Name}.dll";
-                return TryLoadDll(Path.Combine(Common.ModDir, LoadingModName, dllName)) ??
-                       TryLoadDll(Path.Combine(Common.ModDir, "Common", dllName)) ??
-                       TryLoadDll(Path.Combine(Common.LoaderDir, dllName));
+                string dllName = $"{name.Name}.dll";
+                // a mod can also need a dependency after Init, for example in a hotkey
+                string? modName = loadingModName ?? ModNameOf(args.RequestingAssembly);
+                if (modName != null)
+                {
+                    Assembly? fromMod = TryLoadDll(Path.Combine(Common.ModPath, modName, dllName), modName);
+                    if (fromMod != null)
+                    {
+                        return fromMod;
+                    }
+                }
+                Assembly? shared = TryLoadDll(Path.Combine(Common.ModPath, "Common", dllName), null) ??
+                                   TryLoadDll(Path.Combine(Common.LoaderPath, dllName), null);
+                if (shared != null || modName != null || !Directory.Exists(Common.ModPath))
+                {
+                    return shared;
+                }
+                // the requesting mod is not known, look into each mod folder
+                foreach (string dir in Directory.GetDirectories(Common.ModPath))
+                {
+                    Assembly? found = TryLoadDll(Path.Combine(dir, dllName), Path.GetFileName(dir));
+                    if (found != null)
+                    {
+                        return found;
+                    }
+                }
             }
             catch (Exception e)
             {
@@ -86,7 +158,7 @@ namespace CSharpManager
         {
             Utils.InitInputManager(InputManager);
             // load config from ini
-            Ini iniFile = new(Path.Combine(Common.LoaderDir, "b1cs.ini"));
+            Ini iniFile = new(Path.Combine(Common.LoaderPath, "b1cs.ini"));
             Develop = iniFile.GetValue("Develop", "Settings", "0").Trim() == "1";
             Log.Debug($"Develop: {Develop}");
         }
@@ -95,50 +167,42 @@ namespace CSharpManager
         {
             LoadedMods.Clear();
             FailedMods.Clear();
-            if (!Directory.Exists(Common.ModDir))
+            if (!Directory.Exists(Common.ModPath))
             {
-                Log.Error($"Mod dir {Common.ModDir} not exists");
+                Log.Error($"Mod dir {Common.ModPath} not exists");
                 UpdateConsoleInfo();
                 return;
             }
-            string[] dirs = Directory.GetDirectories(Common.ModDir);
-            Type modInterface = typeof(ICSharpMod);
+            string[] dirs = Directory.GetDirectories(Common.ModPath);
+            Array.Sort(dirs, StringComparer.OrdinalIgnoreCase);
             foreach (var dir in dirs)
             {
                 string modName = Path.GetFileName(dir);
                 string dllPath = Path.Combine(dir, $"{modName}.dll");
                 if (!File.Exists(dllPath)) continue;
-                LoadingModName = modName;
+                loadingModName = modName;
                 try
                 {
                     Log.Debug($"======== Loading {dllPath} ========");
-                    Assembly assembly;
-                    if (Develop)
+                    Assembly assembly = Develop ? LoadAsNewAssembly(dllPath) : Assembly.LoadFrom(dllPath);
+                    RememberMod(assembly, modName);
+                    // abstract base classes cannot be created
+                    Type[] modTypes = assembly.GetTypes()
+                        .Where(type => typeof(ICSharpMod).IsAssignableFrom(type) && !type.IsAbstract && !type.IsInterface)
+                        .ToArray();
+                    if (modTypes.Length == 0)
                     {
-                        using var assemblyDef = AssemblyDefinition.ReadAssembly(dllPath);
-                        assemblyDef.Name.Name += DateTime.Now.ToString("_yyyyMMdd_HHmmssffff");
-                        using MemoryStream stream = new();
-                        assemblyDef.Write(stream);
-                        assembly = Assembly.Load(stream.ToArray());
+                        Log.Warn($"{dllPath} has no class that implements ICSharpMod, so it does nothing. " +
+                                 "Is CSharpModBase.dll the one of this loader version?");
                     }
-                    else
+                    bool failed = false;
+                    foreach (Type type in modTypes)
                     {
-                        assembly = Assembly.LoadFrom(dllPath);
+                        failed |= !InitMod(type);
                     }
-                    foreach (Type type in assembly.GetTypes())
+                    if (failed)
                     {
-                        // abstract base classes cannot be created
-                        if (modInterface.IsAssignableFrom(type) && !type.IsAbstract && !type.IsInterface)
-                        {
-                            Log.Debug($"Found ICSharpMod: {type}");
-
-                            if (Activator.CreateInstance(type) is ICSharpMod mod)
-                            {
-                                mod.Init();
-                                LoadedMods.Add(mod);
-                                Log.Debug($"Loaded mod {mod.Name} {mod.Version}");
-                            }
-                        }
+                        FailedMods.Add(modName);
                     }
                 }
                 catch (Exception e)
@@ -149,10 +213,151 @@ namespace CSharpManager
                 }
                 finally
                 {
-                    LoadingModName = null;
+                    loadingModName = null;
                 }
             }
             UpdateConsoleInfo();
+        }
+
+        /// <summary>Creates the mod and calls Init. When Init fails, removes the key binds and the Harmony patches that it added.</summary>
+        private bool InitMod(Type type)
+        {
+            Log.Debug($"Found ICSharpMod: {type}");
+            HashSet<string> ownersBefore = HarmonyPatchOwners();
+            List<HotKeyItem> binds = InputManager.StartRecording();
+            try
+            {
+                if (Activator.CreateInstance(type) is ICSharpMod mod)
+                {
+                    mod.Init();
+                    LoadedMods.Add(mod);
+                    Log.Debug($"Loaded mod {mod.Name} {mod.Version}");
+                }
+                return true;
+            }
+            catch (Exception e)
+            {
+                Log.Error($"Init of {type} failed:");
+                Log.Error(e);
+                // nothing of a failed mod stays active
+                InputManager.RemoveKeyBinds(binds);
+                int owners = RemoveNewHarmonyPatches(ownersBefore);
+                if (binds.Count > 0 || owners > 0)
+                {
+                    Log.Warn($"Removed {binds.Count} key binds and the Harmony patches of {owners} Harmony ids of {type}");
+                }
+                return false;
+            }
+            finally
+            {
+                InputManager.StopRecording();
+            }
+        }
+
+        private static bool IsHarmonyLoaded()
+        {
+            return AppDomain.CurrentDomain.GetAssemblies().Any(a => a.GetName().Name == "0Harmony");
+        }
+
+        // only touches Harmony when a mod has loaded it already, so mods without hooks never load it
+        private static HashSet<string> HarmonyPatchOwners()
+        {
+            if (!IsHarmonyLoaded())
+            {
+                return new HashSet<string>();
+            }
+            try
+            {
+                return GetHarmonyPatchOwners();
+            }
+            catch (Exception e)
+            {
+                Log.Warn($"Could not list the Harmony patches: {e.Message}");
+                return new HashSet<string>();
+            }
+        }
+
+        // a separate method, so 0Harmony.dll is only loaded when it is called
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        private static HashSet<string> GetHarmonyPatchOwners()
+        {
+            var owners = new HashSet<string>();
+            foreach (MethodBase method in Harmony.GetAllPatchedMethods())
+            {
+                Patches? info = Harmony.GetPatchInfo(method);
+                if (info != null)
+                {
+                    owners.UnionWith(info.Owners);
+                }
+            }
+            return owners;
+        }
+
+        private static int RemoveNewHarmonyPatches(HashSet<string> ownersBefore)
+        {
+            int removed = 0;
+            foreach (string owner in HarmonyPatchOwners())
+            {
+                if (ownersBefore.Contains(owner)) continue;
+                try
+                {
+                    UnpatchAll(owner);
+                    removed++;
+                }
+                catch (Exception e)
+                {
+                    Log.Error($"Could not remove the Harmony patches of {owner}:");
+                    Log.Error(e);
+                }
+            }
+            return removed;
+        }
+
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        private static void UnpatchAll(string owner)
+        {
+            // the id must be given, UnpatchAll(null) removes the patches of all mods
+            new Harmony(owner).UnpatchAll(owner);
+        }
+
+        /// <summary>
+        /// Develop mode: loads the dll under a new assembly name, so a reload uses the rebuilt dll.
+        /// The pdb next to it is loaded too, so stack traces can show line numbers.
+        /// </summary>
+        private static Assembly LoadAsNewAssembly(string dllPath)
+        {
+            if (File.Exists(Path.ChangeExtension(dllPath, ".pdb")))
+            {
+                try
+                {
+                    return LoadAsNewAssembly(dllPath, true);
+                }
+                catch (Exception e)
+                {
+                    Log.Warn($"Could not load the pdb of {dllPath}, stack traces have no line numbers: {e.Message}");
+                }
+            }
+            return LoadAsNewAssembly(dllPath, false);
+        }
+
+        internal static Assembly LoadAsNewAssembly(string dllPath, bool withSymbols)
+        {
+            using var assemblyDef = AssemblyDefinition.ReadAssembly(dllPath, new ReaderParameters { ReadSymbols = withSymbols });
+            assemblyDef.Name.Name += DateTime.Now.ToString("_yyyyMMdd_HHmmssffff");
+            using MemoryStream image = new();
+            if (!withSymbols)
+            {
+                assemblyDef.Write(image);
+                return Assembly.Load(image.ToArray());
+            }
+            using MemoryStream symbols = new();
+            assemblyDef.Write(image, new WriterParameters
+            {
+                WriteSymbols = true,
+                SymbolStream = symbols,
+                SymbolWriterProvider = new PortablePdbWriterProvider(),
+            });
+            return Assembly.Load(image.ToArray(), symbols.ToArray());
         }
 
         public void ReloadMods()
@@ -248,7 +453,9 @@ namespace CSharpManager
 
         public void StartLoop()
         {
-            InputManager.RegisterBuiltinKeyBind(ModifierKeys.Control, Key.F5, ReloadMods);
+            HotKeyItem reload = InputManager.RegisterBuiltinKeyBind(ModifierKeys.Control, Key.F5, ReloadMods);
+            // the first load does not run on the game thread either, so Init and DeInit always run on a background thread
+            reload.RunOnGameThread = false;
             loopThread = new Thread(Loop)
             {
                 // a foreground thread can keep the game process from exiting
@@ -261,7 +468,17 @@ namespace CSharpManager
         {
             while (true)
             {
-                InputManager.Update();
+                try
+                {
+                    InputManager.Update();
+                }
+                catch (Exception e)
+                {
+                    // keep the hotkeys working, an exception here would end the thread
+                    Log.Error("Input loop failed:");
+                    Log.Error(e);
+                    Thread.Sleep(1000);
+                }
                 Thread.Sleep(10);  // 10ms
             }
         }

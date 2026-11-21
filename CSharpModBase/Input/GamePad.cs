@@ -1,4 +1,6 @@
 using System;
+using System.Diagnostics;
+using System.Threading;
 using SharpDX.XInput;
 
 namespace CSharpModBase.Input
@@ -32,11 +34,21 @@ namespace CSharpModBase.Input
 
     public static class GamePadUtils
     {
+        // XInput is slow for a controller that is not connected, so look for one only this often
+        private const long RetryMs = 1000;
+
         private static readonly Controller controller = new Controller(UserIndex.One);
+        private static readonly Stopwatch clock = Stopwatch.StartNew();
+        private static long nextTryMs;
 
         public static bool GetGamePadButtons(out GamePadButton flags)
         {
             flags = GamePadButton.None;
+            long now = clock.ElapsedMilliseconds;
+            if (now < Interlocked.Read(ref nextTryMs))
+            {
+                return false;
+            }
             if (controller.GetState(out State state))
             {
                 Gamepad gamepad = state.Gamepad;
@@ -45,6 +57,7 @@ namespace CSharpModBase.Input
                 if (gamepad.RightTrigger > 100) flags |= GamePadButton.RightTrigger;
                 return true;
             }
+            Interlocked.Exchange(ref nextTryMs, now + RetryMs);
             return false;
         }
     }

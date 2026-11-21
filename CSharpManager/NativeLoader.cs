@@ -1,6 +1,7 @@
 using System;
 using System.IO;
 using System.Runtime.InteropServices;
+using CSharpModBase;
 
 namespace CSharpManager
 {
@@ -39,9 +40,11 @@ namespace CSharpManager
 
         private static IntPtr FindModule()
         {
+            // the native loader is in the folder above CSharpLoader
+            string gameDir = Path.GetDirectoryName(Common.LoaderPath) ?? Path.GetFullPath(".");
             foreach (string name in new[] { "version.dll", "hid.dll" })
             {
-                IntPtr handle = GetModuleHandleW(Path.GetFullPath(name));
+                IntPtr handle = GetModuleHandleW(Path.Combine(gameDir, name));
                 if (handle != IntPtr.Zero && GetProcAddress(handle, "CSharpLoader_LogLine") != IntPtr.Zero)
                 {
                     return handle;
