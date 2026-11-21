@@ -53,7 +53,7 @@ BlackMythWukong/b1/Binaries/Win64/
 
 配置文件是 `CSharpLoader/b1cs.ini`。`1` 表示开启，`0` 表示关闭。
 
-- `Develop`：开发模式，在游戏中按 Ctrl+F5 重新加载所有 C# mod。
+- `Develop`：开发模式，供 mod 作者使用。在游戏中按 Ctrl+F5 重新加载 mod 时，也会加载重新编译的 mod dll，见下文。默认关闭。
 - `Console`：另外在单独的 Windows 控制台窗口中显示日志，用于排查问题。默认关闭。
 - `EnableJit`：开启 JIT 模式，见下文。
 - `Overlay`：游戏内控制台，显示日志，见下文。

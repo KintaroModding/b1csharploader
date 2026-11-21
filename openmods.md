@@ -38,7 +38,7 @@ To remove the loader, delete `b1/Binaries/Win64/version.dll` and the folder `b1/
 The settings are in `b1/Binaries/Win64/CSharpLoader/b1cs.ini`. `1` turns a setting on, `0` turns it off.
 
 - `Console=1`: also shows the log in a separate console window, for troubleshooting. Off by default.
-- `Develop=1`: press Ctrl+F5 in the game to reload all C# mods.
+- `Develop=1`: for mod authors. Ctrl+F5 in the game reloads the mods, and with this setting it also loads the mod dlls that you rebuilt. Off by default.
 - `EnableJit=1`: turns on JIT mode. Mods that use Harmony hooks need it. See Known issues.
 - `Overlay=1`: press F10 in the game to open and close an in-game console with the log. Page Up and Page Down scroll it.
 - `OverlayKey=F10`: the key for the in-game console. For example `F9`, `Insert`, `Home` or `Tilde`.

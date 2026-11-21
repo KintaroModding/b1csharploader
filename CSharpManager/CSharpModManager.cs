@@ -87,7 +87,7 @@ namespace CSharpManager
             Utils.InitInputManager(InputManager);
             // load config from ini
             Ini iniFile = new(Path.Combine(Common.LoaderDir, "b1cs.ini"));
-            Develop = iniFile.GetValue("Develop", "Settings", "1").Trim() == "1";
+            Develop = iniFile.GetValue("Develop", "Settings", "0").Trim() == "1";
             Log.Debug($"Develop: {Develop}");
         }
 
