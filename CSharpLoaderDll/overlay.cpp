@@ -41,8 +41,13 @@ namespace {
         RECT rect{};
     };
 
+    struct LogLine {
+        std::wstring text;
+        wchar_t level;  // 'I', 'W', 'E', 'D' or '\0'
+    };
+
     std::mutex stateMutex;
-    std::deque<std::wstring> lines;       // guarded by stateMutex
+    std::deque<LogLine> lines;            // guarded by stateMutex
     unsigned long long lineCount = 0;     // all lines ever added, guarded by stateMutex
     int unseenErrors = 0;                 // error lines while the console is closed, guarded by stateMutex
     std::vector<std::wstring> infoLines;  // shown under the console header, guarded by stateMutex
@@ -135,8 +140,8 @@ namespace {
         return line.size() > 17 && line[15] == L'[' && line[17] == L']' ? line[16] : L'\0';
     }
 
-    COLORREF line_color(const std::wstring& line) {
-        switch (line_level(line)) {
+    COLORREF line_color(wchar_t level) {
+        switch (level) {
         case L'E': return ErrorColor;
         case L'W': return WarningColor;
         case L'D': return RGB(160, 160, 160);
@@ -252,7 +257,7 @@ namespace {
         const int padding = lineHeight / 2;
 
         std::vector<std::wstring> info;
-        std::vector<std::wstring> visibleLines;
+        std::vector<LogLine> visibleLines;
         {
             std::lock_guard<std::mutex> lock(stateMutex);
             info = infoLines;
@@ -283,8 +288,8 @@ namespace {
         }
         y += padding;
         for (const auto& line : visibleLines) {
-            SetTextColor(dc, line_color(line));
-            draw_text_line(dc, line, padding, y, rc.right - padding, lineHeight);
+            SetTextColor(dc, line_color(line.level));
+            draw_text_line(dc, line.text, padding, y, rc.right - padding, lineHeight);
             y += lineHeight;
         }
     }
@@ -519,15 +524,15 @@ namespace {
     }
 }
 
-void overlay_start(HMODULE module, const char* keyName) {
-    const std::wstring name(keyName, keyName + strlen(keyName));
+void overlay_start(HMODULE module, const wchar_t* keyName) {
+    const std::wstring name(keyName);
     std::wstring displayName;
     const int key = parse_key(name, displayName);
     if (key != 0) {
         toggleKey = key;
         toggleKeyName = displayName;
     } else {
-        log_error("OverlayKey \"%s\" is unknown, using F10.", keyName);
+        log_error(L"OverlayKey \"%s\" is unknown, using F10.", keyName);
     }
     HANDLE thread = CreateThread(nullptr, 0, overlay_thread, module, 0, nullptr);
     if (thread != nullptr) {
@@ -545,9 +550,15 @@ void overlay_add_line(const wchar_t* line) {
     for (size_t pos = text.find(L'\t'); pos != std::wstring::npos; pos = text.find(L'\t', pos)) {
         text.replace(pos, 1, L"    ");
     }
-    const bool error = line_level(text) == L'E';
+    wchar_t level = line_level(text);
+    const bool error = level == L'E';
+    // the stack trace lines of an exception start with spaces and have no level, they get the color of the line above
+    const bool continuation = level == L'\0' && !text.empty() && iswspace(text[0]);
     std::lock_guard<std::mutex> lock(stateMutex);
-    lines.push_back(std::move(text));
+    if (continuation && !lines.empty()) {
+        level = lines.back().level;
+    }
+    lines.push_back(LogLine{ std::move(text), level });
     if (lines.size() > MaxLines) {
         lines.pop_front();
     }

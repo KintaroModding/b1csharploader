@@ -24,10 +24,7 @@
     <ClInclude Include="memory.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="hid_dll.hpp">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="version_dll.hpp">
+    <ClInclude Include="paths.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="plugin.hpp">
@@ -63,6 +60,9 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="overlay.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="paths.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>

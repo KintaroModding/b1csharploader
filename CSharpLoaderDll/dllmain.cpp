@@ -5,8 +5,7 @@
 #include "log.hpp"
 #include "memory.h"
 #include "overlay.hpp"
-#include "hid_dll.hpp"
-#include "version_dll.hpp"
+#include "paths.hpp"
 #include "plugin.hpp"
 
 enum class DllType {
@@ -75,10 +74,12 @@ DWORD WINAPI MainThread(LPVOID dwModule)
     {
         Sleep(3000);
     }
-    const char* configFile = "./CSharpLoader/b1cs.ini";
-    UINT enableConsole = GetPrivateProfileIntA("Settings", "Console", 0, configFile);
-    BOOL enableJit = GetPrivateProfileIntA("Settings", "EnableJit", 1, configFile);
-    UINT enableOverlay = GetPrivateProfileIntA("Settings", "Overlay", 1, configFile);
+    // a full path: without one, GetPrivateProfile* looks in the Windows folder
+    const std::wstring configPath = loader_path(L"b1cs.ini");
+    const wchar_t* configFile = configPath.c_str();
+    UINT enableConsole = GetPrivateProfileIntW(L"Settings", L"Console", 0, configFile);
+    BOOL enableJit = GetPrivateProfileIntW(L"Settings", L"EnableJit", 1, configFile);
+    UINT enableOverlay = GetPrivateProfileIntW(L"Settings", L"Overlay", 1, configFile);
     if (enableConsole == 1) {
         AllocConsole();
         FILE* fDummy;
@@ -87,8 +88,8 @@ DWORD WINAPI MainThread(LPVOID dwModule)
         freopen_s(&fDummy, "CONOUT$", "w", stderr);
     }
     if (enableOverlay == 1) {
-        char overlayKey[32];
-        GetPrivateProfileStringA("Settings", "OverlayKey", "F10", overlayKey, sizeof(overlayKey), configFile);
+        wchar_t overlayKey[32];
+        GetPrivateProfileStringW(L"Settings", L"OverlayKey", L"F10", overlayKey, static_cast<DWORD>(std::size(overlayKey)), configFile);
         overlay_start(static_cast<HMODULE>(dwModule), overlayKey);
     }
     loadPluginDlls();
@@ -97,22 +98,22 @@ DWORD WINAPI MainThread(LPVOID dwModule)
     // enable jit
     if (enableJit) {
         uint64_t memory_function_ptr = signature("83 3D ? ? ? ? 00 0F 84 ? ? ? ? C7 84 24 ? ? 00 00 01 00 00 00").GetPointer();
+        // "75 ? B9" at the end: without it, the pattern also matches other code in game build 23831
+        uint64_t mono_mode_ptr = signature("48 8D 0D ? ? ? ? E8 ? ? ? ? 89 44 24 ? 83 7C 24 ? 00 75 ? B9").GetPointer();
         if (memory_function_ptr == 0) {
             log_error("memory function signature not found.");
+        } else if (mono_mode_ptr == 0) {
+            // patch both or none, half of the patch would leave the runtime in a mode nobody tested
+            log_error("mono_mode signature not found.");
         } else {
             DWORD old_protect;
             if (VirtualProtect((void*)(memory_function_ptr + 7), 2, PAGE_EXECUTE_READWRITE, &old_protect)) {
                 *(uint16_t*)(memory_function_ptr + 7) = 0xE990;  // nop; jmp
                 VirtualProtect((void*)(memory_function_ptr + 7), 2, old_protect, &old_protect);
-                uint64_t mono_mode_ptr = signature("48 8D 0D ? ? ? ? E8 ? ? ? ? 89 44 24 ? 83 7C 24 ? 00").GetPointer();
-                if (mono_mode_ptr == 0) {
-                    log_error("mono_mode signature not found.");
-                } else {
-                    if (VirtualProtect((void*)(mono_mode_ptr + 7), 5, PAGE_EXECUTE_READWRITE, &old_protect)) {
-                        *(uint8_t*)(mono_mode_ptr + 7) = 0xB8;
-                        *(uint32_t*)(mono_mode_ptr + 8) = 1;
-                        VirtualProtect((void*)(mono_mode_ptr + 7), 5, old_protect, &old_protect);
-                    }
+                if (VirtualProtect((void*)(mono_mode_ptr + 7), 5, PAGE_EXECUTE_READWRITE, &old_protect)) {
+                    *(uint8_t*)(mono_mode_ptr + 7) = 0xB8;
+                    *(uint32_t*)(mono_mode_ptr + 8) = 1;
+                    VirtualProtect((void*)(mono_mode_ptr + 7), 5, old_protect, &old_protect);
                 }
             }
         }
@@ -169,19 +170,15 @@ DWORD WINAPI MainThread(LPVOID dwModule)
     MonoAssemblyOpenRequest open_request{};
     MonoImageOpenStatus status = MonoImageOpenStatus::MONO_IMAGE_OK;
 
-    wchar_t fullFilename[MAX_PATH];
-    DWORD fullFilenameLen = GetFullPathNameW(L"CSharpLoader\\CSharpManager.bin", MAX_PATH, fullFilename, nullptr);
-    if (fullFilenameLen == 0 || fullFilenameLen >= MAX_PATH) {
-        log_error("GetFullPathName failed.");
-        return start_failed();
-    }
-    // convert to utf-8 to support Chinese path, one utf-16 unit needs at most 3 utf-8 bytes
-    char fullFilenameA[MAX_PATH * 3];
-    if (WideCharToMultiByte(CP_UTF8, 0, fullFilename, -1, fullFilenameA, static_cast<int>(std::size(fullFilenameA)), NULL, NULL) == 0) {
+    const std::wstring fullFilename = loader_path(L"CSharpManager.bin");
+    // convert to utf-8 to support Chinese path
+    const int utf8Size = WideCharToMultiByte(CP_UTF8, 0, fullFilename.c_str(), -1, nullptr, 0, nullptr, nullptr);
+    std::string fullFilenameA(utf8Size > 0 ? static_cast<size_t>(utf8Size) : 0, '\0');
+    if (utf8Size <= 0 || WideCharToMultiByte(CP_UTF8, 0, fullFilename.c_str(), -1, &fullFilenameA[0], utf8Size, nullptr, nullptr) == 0) {
         log_error("convert path to utf-8 failed.");
         return start_failed();
     }
-    void* assembly = mono_assembly_request_open(fullFilenameA, &open_request, &status);
+    void* assembly = mono_assembly_request_open(fullFilenameA.c_str(), &open_request, &status);
     if (assembly == nullptr) {
         log_error("mono_assembly_request_open failed.");
         return start_failed();
@@ -215,26 +212,16 @@ void init_dll(HMODULE hModule) {
         wchar_t ext[_MAX_EXT+1];
         _wsplitpath_s(moduleFullpathFilename, drive, dir, fname, ext);
     }
+    // the real version.dll or hid.dll is loaded on the first call of one of its functions, not here
     if (_wcsicmp(fname, L"version") == 0) {
         dllType = DllType::Version;
-        init_version_dll();
     } else if (_wcsicmp(fname, L"hid") == 0) {
         dllType = DllType::Hid;
-        init_hid_dll();
     }
     HANDLE thread = CreateThread(nullptr, 0, MainThread, hModule, 0, nullptr);
     if (thread != nullptr) {
         CloseHandle(thread);
     }
-}
-
-void deinit_dll() {
-    if (dllType == DllType::Version) {
-        deinit_version_dll();
-    } else if (dllType == DllType::Hid) {
-        deinit_hid_dll();
-    }
-    // unloadPluginDlls();
 }
 
 BOOL APIENTRY DllMain( HMODULE hModule,
@@ -243,15 +230,9 @@ BOOL APIENTRY DllMain( HMODULE hModule,
                      )
 {
     static std::once_flag initFlag;
-    static std::once_flag cleanupFlag;
-    switch (ul_reason_for_call)
-    {
-    case DLL_PROCESS_ATTACH:
+    // nothing to do at DLL_PROCESS_DETACH: FreeLibrary there is not safe, and the process ends anyway
+    if (ul_reason_for_call == DLL_PROCESS_ATTACH) {
         std::call_once(initFlag, [&]() { init_dll(hModule); });
-        break;
-    case DLL_PROCESS_DETACH:
-        std::call_once(cleanupFlag, [&]() { deinit_dll(); });
-        break;
     }
     return TRUE;
 }

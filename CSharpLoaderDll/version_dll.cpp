@@ -1,44 +1,43 @@
 ﻿#include "pch.h"
 #pragma unmanaged
-#include "version_dll.hpp"
 #include "log.hpp"
 #include <windows.h>
 #include <array>
 #include <stdio.h>
 
 ///////////////////////////////////////////////////////////////
-static HMODULE hModuleDll = nullptr;
-static const wchar_t dllFname[] = L"version";
+namespace {
+    const wchar_t dllFname[] = L"version";
+    HMODULE hModuleDll = nullptr;
+    INIT_ONCE loadOnce = INIT_ONCE_STATIC_INIT;
 
-bool init_version_dll() {
-    deinit_version_dll();
-    wchar_t systemDirectory[MAX_PATH]{0};
-    GetSystemDirectoryW(systemDirectory, MAX_PATH);
-    wchar_t fullpathDllName[MAX_PATH]{0};
-    swprintf_s(fullpathDllName, MAX_PATH, L"%s\\%s.dll", systemDirectory, dllFname);
-    if ((hModuleDll = LoadLibraryW(fullpathDllName)) == NULL) {
-        return false;
+    BOOL CALLBACK load_real_dll(PINIT_ONCE, PVOID, PVOID*) {
+        wchar_t systemDirectory[MAX_PATH]{0};
+        GetSystemDirectoryW(systemDirectory, MAX_PATH);
+        wchar_t fullpathDllName[MAX_PATH]{0};
+        swprintf_s(fullpathDllName, MAX_PATH, L"%s\\%s.dll", systemDirectory, dllFname);
+        hModuleDll = LoadLibraryW(fullpathDllName);
+        if (hModuleDll == nullptr) {
+            const DWORD error = GetLastError();
+            log_error(L"load %s failed, error %lu", fullpathDllName, error);
+        }
+        return TRUE;
     }
-    log_info(L"load %s success", dllFname);
-    return true;
-}
 
-bool deinit_version_dll() {
-    if(hModuleDll != nullptr) {
-        FreeLibrary(hModuleDll);
-        hModuleDll = nullptr;
+    // The real dll is loaded on the first call, not in DllMain: LoadLibrary under the loader lock can deadlock.
+    // It is never freed, the game can call its functions until the process ends.
+    HMODULE real_dll() {
+        InitOnceExecuteOnce(&loadOnce, load_real_dll, nullptr, nullptr);
+        return hModuleDll;
     }
-    return true;
-}
 
-
-///////////////////////////////////////////////////////////////
-template<typename T>
-void setup(T*& funcPtr, const char* funcName) {
-    if(funcPtr != nullptr) {
-        return;
+    template<typename T>
+    void setup(T*& funcPtr, const char* funcName) {
+        if(funcPtr != nullptr) {
+            return;
+        }
+        funcPtr = reinterpret_cast<T*>(GetProcAddress(real_dll(), funcName));
     }
-    funcPtr = reinterpret_cast<T*>(GetProcAddress(hModuleDll, funcName));
 }
 
 #define D(funcname, ...)            \

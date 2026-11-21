@@ -2,6 +2,7 @@
 #include "pch.h"
 #include "plugin.hpp"
 #include "log.hpp"
+#include "paths.hpp"
 #include <functional>
 #include <algorithm>
 #include <array>
@@ -57,7 +58,7 @@ void recursiveFileEnumerator(const wchar_t* path, const std::function<void(const
 
 void loadPluginDlls() {
     unloadPluginDlls();
-    Path pluginsPath = Path::make(L"CSharpLoader\\Plugins");
+    Path pluginsPath(loader_path(L"Plugins").c_str());
     log_info(L"loadPluginDlls : pluginsPath=[%s]", pluginsPath.data());
 
     std::vector<Path> pluginFilenames;

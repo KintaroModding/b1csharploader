@@ -1,6 +1,7 @@
 #include "pch.h"
 #include "log.hpp"
 #include "overlay.hpp"
+#include "paths.hpp"
 #include <algorithm>
 #include <iterator>
 #include <mutex>
@@ -11,7 +12,6 @@
 
 namespace {
     constexpr size_t KeepLogFiles = 5;
-    const wchar_t LogDir[] = L"CSharpLoader\\Logs";
 
     std::mutex fileMutex;
     HANDLE logFile = INVALID_HANDLE_VALUE;  // guarded by fileMutex
@@ -23,10 +23,10 @@ namespace {
     }
 
     // keeps the newest log files, so there are KeepLogFiles with the new one
-    void delete_old_log_files() {
+    void delete_old_log_files(const std::wstring& logDir) {
         std::vector<std::wstring> names;
         WIN32_FIND_DATAW wfd;
-        HANDLE find = FindFirstFileW((std::wstring(LogDir) + L"\\*.log").c_str(), &wfd);
+        HANDLE find = FindFirstFileW((logDir + L"\\*.log").c_str(), &wfd);
         if (find == INVALID_HANDLE_VALUE) {
             return;
         }
@@ -38,20 +38,22 @@ namespace {
         FindClose(find);
         std::sort(names.begin(), names.end());
         while (names.size() >= KeepLogFiles) {
-            DeleteFileW((std::wstring(LogDir) + L"\\" + names.front()).c_str());
+            DeleteFileW((logDir + L"\\" + names.front()).c_str());
             names.erase(names.begin());
         }
     }
 
     void open_log_file() {
-        CreateDirectoryW(L"CSharpLoader", nullptr);
-        CreateDirectoryW(LogDir, nullptr);
-        delete_old_log_files();
+        const std::wstring logDir = loader_path(L"Logs");
+        CreateDirectoryW(loader_path().c_str(), nullptr);
+        CreateDirectoryW(logDir.c_str(), nullptr);
+        delete_old_log_files(logDir);
         SYSTEMTIME t;
         GetLocalTime(&t);
-        wchar_t path[MAX_PATH];
-        swprintf_s(path, L"%s\\%04d-%02d-%02d_%02d-%02d-%02d.log", LogDir, t.wYear, t.wMonth, t.wDay, t.wHour, t.wMinute, t.wSecond);
-        logFile = CreateFileW(path, FILE_APPEND_DATA, FILE_SHARE_READ | FILE_SHARE_DELETE, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+        wchar_t name[32];
+        swprintf_s(name, L"%04d-%02d-%02d_%02d-%02d-%02d.log", t.wYear, t.wMonth, t.wDay, t.wHour, t.wMinute, t.wSecond);
+        const std::wstring path = logDir + L"\\" + name;
+        logFile = CreateFileW(path.c_str(),FILE_APPEND_DATA, FILE_SHARE_READ | FILE_SHARE_DELETE, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
     }
 
     // written right away without a buffer, so the file has every line even when the game crashes
@@ -112,6 +114,13 @@ void log_info(const char* fmt, ...) {
     va_list args;
     va_start(args, fmt);
     write_line(stdout, 'I', fmt, args);
+    va_end(args);
+}
+
+void log_warn(const char* fmt, ...) {
+    va_list args;
+    va_start(args, fmt);
+    write_line(stderr, 'W', fmt, args);
     va_end(args);
 }
 

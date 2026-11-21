@@ -9,7 +9,7 @@ enum BannerLevel {
     BannerError = 2,
 };
 
-void overlay_start(HMODULE module, const char* keyName);
+void overlay_start(HMODULE module, const wchar_t* keyName);
 const wchar_t* overlay_key_name();
 void overlay_add_line(const wchar_t* line);
 // Shows a banner at the top of the game for 5 seconds, lines are separated by '\n'
