@@ -12,12 +12,17 @@
     <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
   </PropertyGroup>
 
+  <!-- a copy, not a move: the test project references CSharpManager.exe -->
   <Target Name="PostBuild" AfterTargets="PostBuildEvent">
-    <Exec Command='move /Y "$(TargetPath)" "$(OutDir)CSharpManager.bin"' />
+    <Copy SourceFiles="$(TargetPath)" DestinationFiles="$(OutDir)CSharpManager.bin" />
   </Target>
 
   <ItemGroup>
     <ProjectReference Include="..\CSharpModBase\CSharpModBase.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="CSharpManager.Tests" />
   </ItemGroup>
 
   <ItemGroup>

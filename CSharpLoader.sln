@@ -11,6 +11,8 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "CSharpModBase", "CSharpModB
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "CSharpExample", "CSharpModExample\CSharpExample.csproj", "{541076F4-03E4-4C7E-B511-E5D548DD6707}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CSharpManager.Tests", "CSharpManager.Tests\CSharpManager.Tests.csproj", "{598CAE0E-862B-4464-AD70-DEAC3403DF6F}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -69,6 +71,18 @@ Global
 		{541076F4-03E4-4C7E-B511-E5D548DD6707}.Release|x64.Build.0 = Release|Any CPU
 		{541076F4-03E4-4C7E-B511-E5D548DD6707}.Release|x86.ActiveCfg = Release|Any CPU
 		{541076F4-03E4-4C7E-B511-E5D548DD6707}.Release|x86.Build.0 = Release|Any CPU
+		{598CAE0E-862B-4464-AD70-DEAC3403DF6F}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{598CAE0E-862B-4464-AD70-DEAC3403DF6F}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{598CAE0E-862B-4464-AD70-DEAC3403DF6F}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{598CAE0E-862B-4464-AD70-DEAC3403DF6F}.Debug|x64.Build.0 = Debug|Any CPU
+		{598CAE0E-862B-4464-AD70-DEAC3403DF6F}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{598CAE0E-862B-4464-AD70-DEAC3403DF6F}.Debug|x86.Build.0 = Debug|Any CPU
+		{598CAE0E-862B-4464-AD70-DEAC3403DF6F}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{598CAE0E-862B-4464-AD70-DEAC3403DF6F}.Release|Any CPU.Build.0 = Release|Any CPU
+		{598CAE0E-862B-4464-AD70-DEAC3403DF6F}.Release|x64.ActiveCfg = Release|Any CPU
+		{598CAE0E-862B-4464-AD70-DEAC3403DF6F}.Release|x64.Build.0 = Release|Any CPU
+		{598CAE0E-862B-4464-AD70-DEAC3403DF6F}.Release|x86.ActiveCfg = Release|Any CPU
+		{598CAE0E-862B-4464-AD70-DEAC3403DF6F}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
