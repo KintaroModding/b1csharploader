@@ -31,7 +31,8 @@ namespace CSharpExample
         public void DeInit()
         {
             Log.Info($"{Name} DeInit");
-            // harmony.UnpatchAll();
+            // the id matters: UnpatchAll() without it removes the patches of all mods
+            // harmony.UnpatchAll(harmony.Id);
         }
 
         private void FindPlayer()

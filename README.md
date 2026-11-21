@@ -98,8 +98,10 @@ Read the instructions of your mods: if none of them needs hooks, you can set `En
 - `CSharpManager`: the mod manager. It loads and manages the C# mods.
 - `CSharpModBase`: the API for mods.
 - `CSharpModExample`: an example mod.
+- `CSharpManager.Tests`: unit tests for the hotkeys and the mod manager.
 - `GameDll`: the game's C# dlls. Mod projects reference them.
 - `extract_dlls.py`: updates `GameDll` from the game exe.
+- `check_signatures.py`: checks the native loader's byte signatures against a game exe.
 - `build.ps1`: builds everything and packs the release zip.
 
 ### Build
@@ -112,6 +114,14 @@ powershell -ExecutionPolicy Bypass -File build.ps1 -Version 1.0.0
 
 It needs Visual Studio 2022 (or its Build Tools) with the C++ workload, and the .NET SDK 8 or newer.
 
+Run the tests with:
+
+```
+dotnet test CSharpManager.Tests/CSharpManager.Tests.csproj -c Release
+```
+
+GitHub Actions runs the tests and `build.ps1` for each push to `master` and each pull request, and keeps the zip as a build artifact. A tag like `v1.2.3` also makes a draft release with the zip of version `1.2.3`.
+
 ### Update GameDll
 
 `GameDll` holds the C# dlls of game version 1.0.21.23831. After a game update, extract them again from the game exe (needs Python 3):
@@ -121,6 +131,14 @@ python extract_dlls.py --exe "<game folder>/b1/Binaries/Win64/b1-Win64-Shipping.
 ```
 
 The script updates the dlls in `GameDll` and lists the files that the game no longer contains. Add `--dry-run` to only list them.
+
+Then check that the native loader still finds the game's Mono functions:
+
+```
+python check_signatures.py --exe "<game folder>/b1/Binaries/Win64/b1-Win64-Shipping.exe"
+```
+
+Each signature in `CSharpLoaderDll/dllmain.cpp` must match exactly once. `MISSING` means that the loader cannot start with this game version. `NOT UNIQUE` means that it can patch the wrong code: make the signature longer until it is unique.
 
 Then set `TestedGameBuild` in `CSharpManager/CSharpModManager.cs` to the new build number, the last part of the game version (for example `23831`), and update the game version in this README and in `openmods.json`.
 
@@ -150,11 +168,19 @@ public class MyMod : ICSharpMod
 }
 ```
 
-The manager creates an instance of each class that implements `ICSharpMod` and calls `Init()`.
+The manager creates an instance of each class that implements `ICSharpMod` and calls `Init()`. If a dll has no such class, the log shows a warning.
+
+`Init()` and `DeInit()` run on a background thread, not on the game thread. For game and Unreal Engine calls that need the game thread, use `Utils.TryRunOnGameThread()`. Key bind actions run on the game thread by default.
+
+If `Init()` throws an exception, the manager removes the key binds and the Harmony patches that the mod added before the exception, and shows the mod as failed.
 
 For console output, use `Log.Info()`, `Log.Warn()`, `Log.Error()` and `Log.Debug()`. They add the time and the level to each line, like the loader's own output.
 
 When you press Ctrl+F5 to reload the mods, the manager calls `DeInit()` of each loaded mod, then loads all mods again. In Develop mode, each reload loads the mod dll as a new assembly, and the old assembly stays in memory. So stop your background threads and remove your event handlers in `DeInit()`. You do not need to remove your key binds: the manager does that.
+
+In Develop mode, the manager also loads the `.pdb` file next to the mod dll, so that stack traces can show line numbers, if the game's runtime supports it.
+
+For the loader's folders, use `Common.LoaderPath`, `Common.ModPath` and `Common.DataPath`. They are full paths. The older `Common.LoaderDir`, `ModDir` and `DataDir` are relative to the game's working folder.
 
 ### Key binds
 
@@ -192,12 +218,15 @@ harmony.PatchAll();
 Call this in `DeInit()`:
 
 ```C#
-harmony.UnpatchAll();
+// give the id: UnpatchAll() without it removes the patches of all mods
+harmony.UnpatchAll(harmony.Id);
 ```
 
 ### Mod dependencies
 
 Put the dlls that your mod depends on into `CSharpLoader/Mods/<ModName>/`, or into `CSharpLoader/Mods/Common/` to share them with all mods.
+
+When a dll with the same name is loaded already, and its version is not older than the one your mod needs, all mods use the loaded one. So all mods share the loader's `CSharpModBase.dll`, `0Harmony.dll` and `SharpDX.dll`, and you do not need to put copies of them into your mod folder.
 
 ## Fork changes
 
@@ -206,6 +235,9 @@ Changes compared to the original project:
 - `GameDll` updated for game version 1.0.21.23831, with a script to update it after game updates.
 - Bug fixes: hotkey repeat, gamepad button combos, error logs, paths with non-English characters, and the input thread at game exit.
 - A build script that makes the release zip.
+- An in-game console, banners and log files.
+- A more robust loader: the hotkeys keep working after an exception in the input loop, a disconnected gamepad no longer slows down the input loop, mods share the loaded `CSharpModBase` and `0Harmony`, a mod that fails in `Init()` leaves no key binds or Harmony patches behind, and the native loader no longer loads dlls in `DllMain` or depends on the working folder.
+- Unit tests, a GitHub Actions build, and a script that checks the byte signatures against a game exe.
 
 Changes taken from pull requests to the original project:
 
