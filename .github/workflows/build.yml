@@ -1,0 +1,54 @@
+name: Build
+
+on:
+  push:
+    branches: [master]
+    tags: ['v*']
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Test
+        run: dotnet test CSharpManager.Tests/CSharpManager.Tests.csproj -c Release
+
+      - name: Build the release zip
+        shell: pwsh
+        run: |
+          # v1.2.3 tags give version 1.2.3, other builds get the commit
+          $version = if ($env:GITHUB_REF_TYPE -eq 'tag') { $env:GITHUB_REF_NAME.TrimStart('v') } else { "ci-$($env:GITHUB_SHA.Substring(0, 7))" }
+          ./build.ps1 -Version $version
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: B1CSharpLoader
+          path: dist/*.zip
+          if-no-files-found: error
+
+  release:
+    # a tag makes a draft release with the zip, publish it on GitHub after a check
+    if: github.ref_type == 'tag'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: B1CSharpLoader
+          path: dist
+
+      - name: Create a draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" dist/*.zip --repo "$GITHUB_REPOSITORY" --draft --title "$GITHUB_REF_NAME" --generate-notes
